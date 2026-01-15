@@ -5,6 +5,38 @@ export class AddRelationshipsAndIndexes1736526000000
   name = 'AddRelationshipsAndIndexes1736526000000';
 
   public async up(queryRunner: QueryRunner): Promise<void> {
+    // Create agencies table first as it's required for relations
+    await queryRunner.query(`
+      CREATE TABLE IF NOT EXISTS "agencies" (
+        "id" uuid PRIMARY KEY DEFAULT uuid_generate_v4(),
+        "name" varchar NOT NULL,
+        "email" varchar NOT NULL UNIQUE,
+        "subdomain" varchar UNIQUE,
+        "phone" varchar NOT NULL,
+        "address" varchar NOT NULL,
+        "city" varchar NOT NULL,
+        "postal_code" varchar NOT NULL,
+        "website" varchar,
+        "logo" varchar,
+        "is_active" boolean NOT NULL DEFAULT true,
+        "primary_color" varchar NOT NULL DEFAULT '#1a2b4b',
+        "secondary_color" varchar NOT NULL DEFAULT '#c5a059',
+        "created_at" timestamp NOT NULL DEFAULT now(),
+        "updated_at" timestamp NOT NULL DEFAULT now()
+      )
+    `);
+
+    // Add indexes for agencies
+    await queryRunner.query(
+      `CREATE INDEX IF NOT EXISTS "IDX_agencies_name" ON "agencies" ("name")`,
+    );
+    await queryRunner.query(
+      `CREATE INDEX IF NOT EXISTS "IDX_agencies_email" ON "agencies" ("email")`,
+    );
+    await queryRunner.query(
+      `CREATE INDEX IF NOT EXISTS "IDX_agencies_subdomain" ON "agencies" ("subdomain")`,
+    );
+
     // Add agencyId to entities that are missing it
     // Core entities
     await queryRunner.query(
@@ -445,5 +477,8 @@ export class AddRelationshipsAndIndexes1736526000000
     await queryRunner.query(`ALTER TABLE "clients" DROP COLUMN "agency_id"`);
     await queryRunner.query(`ALTER TABLE "properties" DROP COLUMN "agency_id"`);
     await queryRunner.query(`ALTER TABLE "users" DROP COLUMN "agency_id"`);
+
+    // Drop agencies table
+    await queryRunner.query(`DROP TABLE IF EXISTS "agencies"`);
   }
 }
