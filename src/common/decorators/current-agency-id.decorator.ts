@@ -12,7 +12,7 @@ import { UserRole } from '../../users/entities/user.entity';
  *    - It returns the agencyId attached to the user from the JWT.
  */
 export const CurrentAgencyId = createParamDecorator(
-    (data: unknown, ctx: ExecutionContext) => {
+    (_data: unknown, ctx: ExecutionContext) => {
         const request = ctx.switchToHttp().getRequest();
         const user = request.user;
 

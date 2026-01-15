@@ -7,6 +7,7 @@ import { AgenciesModule } from '../agencies/agencies.module';
 import { UsersModule } from '../users/users.module';
 import { LeadsModule } from '../leads/leads.module';
 import { Property } from '../properties/entities/property.entity';
+import { NotificationsModule } from '../notifications/notifications.module';
 
 @Module({
     imports: [
@@ -15,6 +16,7 @@ import { Property } from '../properties/entities/property.entity';
         AgenciesModule,
         UsersModule,
         LeadsModule,
+        NotificationsModule,
     ],
     controllers: [PublicController],
     providers: [PublicService],

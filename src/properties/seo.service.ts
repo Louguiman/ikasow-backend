@@ -201,7 +201,7 @@ export class SeoService {
    * Helper method to get human-readable property type label
    */
   private getPropertyTypeLabel(type: PropertyType): string {
-    const labels = {
+    const labels: Record<string, string> = {
       [PropertyType.APARTMENT]: 'Apartment',
       [PropertyType.HOUSE]: 'House',
       [PropertyType.COMMERCIAL]: 'Commercial Property',
