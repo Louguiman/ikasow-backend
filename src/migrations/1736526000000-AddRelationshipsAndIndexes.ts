@@ -6,26 +6,52 @@ export class AddRelationshipsAndIndexes1736526000000
 
   public async up(queryRunner: QueryRunner): Promise<void> {
     // Add agencyId to entities that are missing it
+    // Core entities
     await queryRunner.query(
-      `ALTER TABLE "tenants" ADD "agency_id" uuid NOT NULL DEFAULT '00000000-0000-0000-0000-000000000000'`,
+      `ALTER TABLE "users" ADD COLUMN IF NOT EXISTS "agency_id" uuid NOT NULL DEFAULT '00000000-0000-0000-0000-000000000000'`,
     );
     await queryRunner.query(
-      `ALTER TABLE "invoices" ADD "agency_id" uuid NOT NULL DEFAULT '00000000-0000-0000-0000-000000000000'`,
+      `ALTER TABLE "properties" ADD COLUMN IF NOT EXISTS "agency_id" uuid NOT NULL DEFAULT '00000000-0000-0000-0000-000000000000'`,
     );
     await queryRunner.query(
-      `ALTER TABLE "service_requests" ADD "agency_id" uuid NOT NULL DEFAULT '00000000-0000-0000-0000-000000000000'`,
+      `ALTER TABLE "clients" ADD COLUMN IF NOT EXISTS "agency_id" uuid NOT NULL DEFAULT '00000000-0000-0000-0000-000000000000'`,
     );
     await queryRunner.query(
-      `ALTER TABLE "activities" ADD "agency_id" uuid NOT NULL DEFAULT '00000000-0000-0000-0000-000000000000'`,
+      `ALTER TABLE "tenants" ADD COLUMN IF NOT EXISTS "agency_id" uuid NOT NULL DEFAULT '00000000-0000-0000-0000-000000000000'`,
+    );
+
+    // Secondary entities
+    await queryRunner.query(
+      `ALTER TABLE "invoices" ADD COLUMN IF NOT EXISTS "agency_id" uuid NOT NULL DEFAULT '00000000-0000-0000-0000-000000000000'`,
     );
     await queryRunner.query(
-      `ALTER TABLE "mandates" ADD "agency_id" uuid NOT NULL DEFAULT '00000000-0000-0000-0000-000000000000'`,
+      `ALTER TABLE "service_requests" ADD COLUMN IF NOT EXISTS "agency_id" uuid NOT NULL DEFAULT '00000000-0000-0000-0000-000000000000'`,
     );
     await queryRunner.query(
-      `ALTER TABLE "payments" ADD "agency_id" uuid NOT NULL DEFAULT '00000000-0000-0000-0000-000000000000'`,
+      `ALTER TABLE "activities" ADD COLUMN IF NOT EXISTS "agency_id" uuid NOT NULL DEFAULT '00000000-0000-0000-0000-000000000000'`,
+    );
+    await queryRunner.query(
+      `ALTER TABLE "mandates" ADD COLUMN IF NOT EXISTS "agency_id" uuid NOT NULL DEFAULT '00000000-0000-0000-0000-000000000000'`,
+    );
+    await queryRunner.query(
+      `ALTER TABLE "payments" ADD COLUMN IF NOT EXISTS "agency_id" uuid NOT NULL DEFAULT '00000000-0000-0000-0000-000000000000'`,
+    );
+
+    // Leads table
+    await queryRunner.query(
+      `ALTER TABLE "leads" ADD COLUMN IF NOT EXISTS "agency_id" uuid NOT NULL DEFAULT '00000000-0000-0000-0000-000000000000'`,
     );
 
     // Remove default values after data migration (in production, you'd populate these first)
+    await queryRunner.query(
+      `ALTER TABLE "users" ALTER COLUMN "agency_id" DROP DEFAULT`,
+    );
+    await queryRunner.query(
+      `ALTER TABLE "properties" ALTER COLUMN "agency_id" DROP DEFAULT`,
+    );
+    await queryRunner.query(
+      `ALTER TABLE "clients" ALTER COLUMN "agency_id" DROP DEFAULT`,
+    );
     await queryRunner.query(
       `ALTER TABLE "tenants" ALTER COLUMN "agency_id" DROP DEFAULT`,
     );
@@ -407,7 +433,7 @@ export class AddRelationshipsAndIndexes1736526000000
     );
 
     // Remove agencyId columns
-    await queryRunner.query(`ALTER TABLE "tenants" DROP COLUMN "agency_id"`);
+    await queryRunner.query(`ALTER TABLE "leads" DROP COLUMN "agency_id"`);
     await queryRunner.query(`ALTER TABLE "payments" DROP COLUMN "agency_id"`);
     await queryRunner.query(`ALTER TABLE "mandates" DROP COLUMN "agency_id"`);
     await queryRunner.query(`ALTER TABLE "activities" DROP COLUMN "agency_id"`);
@@ -415,5 +441,9 @@ export class AddRelationshipsAndIndexes1736526000000
       `ALTER TABLE "service_requests" DROP COLUMN "agency_id"`,
     );
     await queryRunner.query(`ALTER TABLE "invoices" DROP COLUMN "agency_id"`);
+    await queryRunner.query(`ALTER TABLE "tenants" DROP COLUMN "agency_id"`);
+    await queryRunner.query(`ALTER TABLE "clients" DROP COLUMN "agency_id"`);
+    await queryRunner.query(`ALTER TABLE "properties" DROP COLUMN "agency_id"`);
+    await queryRunner.query(`ALTER TABLE "users" DROP COLUMN "agency_id"`);
   }
 }
