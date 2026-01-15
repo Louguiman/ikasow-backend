@@ -33,10 +33,6 @@ RUN npm ci && npm cache clean --force
 # Copy built application from builder
 COPY --from=builder --chown=nestjs:nodejs /app/dist ./dist
 
-# Copy migrations and data-source (needed for migration:run)
-COPY --from=builder --chown=nestjs:nodejs /app/src/migrations ./src/migrations
-COPY --from=builder --chown=nestjs:nodejs /app/src/data-source.ts ./src/data-source.ts
-
 # Copy entrypoint script
 COPY --chown=nestjs:nodejs docker-entrypoint.sh ./
 RUN chmod +x docker-entrypoint.sh

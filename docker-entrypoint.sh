@@ -2,7 +2,7 @@
 set -e
 
 echo "Running database migrations..."
-npm run migration:run
+node_modules/.bin/typeorm migration:run -d dist/data-source.js
 
 echo "Starting application..."
 exec node dist/main
