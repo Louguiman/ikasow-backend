@@ -1,12 +1,14 @@
 import { MigrationInterface, QueryRunner } from 'typeorm';
 
 export class AddRelationshipsAndIndexes1736526000000
-  implements MigrationInterface
-{
+  implements MigrationInterface {
   name = 'AddRelationshipsAndIndexes1736526000000';
 
   public async up(queryRunner: QueryRunner): Promise<void> {
     // Add agencyId to entities that are missing it
+    await queryRunner.query(
+      `ALTER TABLE "tenants" ADD "agency_id" uuid NOT NULL DEFAULT '00000000-0000-0000-0000-000000000000'`,
+    );
     await queryRunner.query(
       `ALTER TABLE "invoices" ADD "agency_id" uuid NOT NULL DEFAULT '00000000-0000-0000-0000-000000000000'`,
     );
@@ -24,6 +26,9 @@ export class AddRelationshipsAndIndexes1736526000000
     );
 
     // Remove default values after data migration (in production, you'd populate these first)
+    await queryRunner.query(
+      `ALTER TABLE "tenants" ALTER COLUMN "agency_id" DROP DEFAULT`,
+    );
     await queryRunner.query(
       `ALTER TABLE "invoices" ALTER COLUMN "agency_id" DROP DEFAULT`,
     );
@@ -402,6 +407,7 @@ export class AddRelationshipsAndIndexes1736526000000
     );
 
     // Remove agencyId columns
+    await queryRunner.query(`ALTER TABLE "tenants" DROP COLUMN "agency_id"`);
     await queryRunner.query(`ALTER TABLE "payments" DROP COLUMN "agency_id"`);
     await queryRunner.query(`ALTER TABLE "mandates" DROP COLUMN "agency_id"`);
     await queryRunner.query(`ALTER TABLE "activities" DROP COLUMN "agency_id"`);
