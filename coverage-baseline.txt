@@ -1,0 +1,50 @@
+﻿  invoices.service.ts            |       0 |        0 |       0 |       0 | 1-225             
+ src/invoices/dto                |       0 |        0 |       0 |       0 |                   
+  create-invoice.dto.ts          |       0 |        0 |       0 |       0 | 1-47              
+  invoice-item.dto.ts            |       0 |      100 |     100 |       0 | 1-13              
+  update-invoice.dto.ts          |       0 |      100 |     100 |       0 | 1-4               
+ src/notifications               |       0 |        0 |       0 |       0 |                   
+  notifications.service.ts       |       0 |        0 |       0 |       0 | 1-29              
+ src/notifications/dto           |       0 |        0 |     100 |       0 |                   
+  create-notification.dto.ts     |       0 |        0 |     100 |       0 | 1-17              
+ src/properties                  |       0 |        0 |       0 |       0 |                   
+  properties.controller.ts       |       0 |        0 |       0 |       0 | 1-218             
+  properties.service.ts          |       0 |        0 |       0 |       0 | 1-254             
+ src/properties/dto              |       0 |        0 |     100 |       0 |                   
+  create-property.dto.ts         |       0 |        0 |     100 |       0 | 1-64              
+  update-property.dto.ts         |       0 |      100 |     100 |       0 | 1-4               
+ src/service-requests            |       0 |        0 |       0 |       0 |                   
+  service-requests.controller.ts |       0 |        0 |       0 |       0 | 1-59              
+  service-requests.service.ts    |       0 |        0 |       0 |       0 | 1-94              
+ src/service-requests/dto        |       0 |        0 |     100 |       0 |                   
+  create-service-request.dto.ts  |       0 |        0 |     100 |       0 | 1-34              
+  update-service-request.dto.ts  |       0 |      100 |     100 |       0 | 1-4               
+ src/tenants                     |       0 |        0 |       0 |       0 |                   
+  tenants.controller.ts          |       0 |        0 |       0 |       0 | 1-61              
+  tenants.service.ts             |       0 |        0 |       0 |       0 | 1-122             
+ src/tenants/dto                 |       0 |        0 |     100 |       0 |                   
+  create-tenant.dto.ts           |       0 |        0 |     100 |       0 | 1-51              
+  update-tenant.dto.ts           |       0 |      100 |     100 |       0 | 1-4               
+ src/users                       |       0 |        0 |       0 |       0 |                   
+  users.controller.ts            |       0 |        0 |       0 |       0 | 1-92              
+  users.service.ts               |       0 |        0 |       0 |       0 | 1-159             
+ src/users/dto                   |       0 |        0 |     100 |       0 |                   
+  create-user.dto.ts             |       0 |        0 |     100 |       0 | 1-35              
+  update-user.dto.ts             |       0 |      100 |     100 |       0 | 1-4               
+---------------------------------|---------|----------|---------|---------|-------------------
+
+=============================== Coverage summary ===============================
+Statements   : 3.21% ( 30/933 )
+Branches     : 1.25% ( 6/477 )
+Functions    : 0.64% ( 1/156 )
+Lines        : 2.52% ( 22/872 )
+================================================================================
+Jest: "global" coverage threshold for statements (50%) not met: 3.21%
+Jest: "global" coverage threshold for branches (50%) not met: 1.25%
+Jest: "global" coverage threshold for lines (50%) not met: 2.52%
+Jest: "global" coverage threshold for functions (50%) not met: 0.64%
+Test Suites: 1 failed, 1 total
+Tests:       1 failed, 1 total
+Snapshots:   0 total
+Time:        37.563 s
+Ran all test suites.
