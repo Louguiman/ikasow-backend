@@ -20,7 +20,7 @@ export class CreatePropertyDto {
     description: 'Agency ID that owns the property',
     example: '123e4567-e89b-12d3-a456-426614174000',
   })
-  @IsNotEmpty()
+  @IsOptional()
   @IsUUID()
   agencyId: string;
 

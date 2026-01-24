@@ -18,7 +18,7 @@ export class UsersService {
   constructor(
     @InjectRepository(User)
     private userRepository: Repository<User>,
-  ) {}
+  ) { }
 
   async create(createUserDto: CreateUserDto): Promise<Omit<User, 'password'>> {
     try {
@@ -26,9 +26,9 @@ export class UsersService {
 
       this.logger.log(
         `Creating user`,
-        JSON.stringify({ 
-          email, 
-          role: createUserDto.role, 
+        JSON.stringify({
+          email,
+          role: createUserDto.role,
           agencyId: createUserDto.agencyId,
           operation: 'create',
         }),
@@ -51,10 +51,10 @@ export class UsersService {
 
       this.logger.log(
         `User created successfully`,
-        JSON.stringify({ 
-          userId: savedUser.id, 
-          email: savedUser.email, 
-          role: savedUser.role, 
+        JSON.stringify({
+          userId: savedUser.id,
+          email: savedUser.email,
+          role: savedUser.role,
           agencyId: savedUser.agencyId,
           operation: 'create',
         }),
@@ -151,6 +151,11 @@ export class UsersService {
         await this.checkEmailUniqueness(updateUserDto.email);
       }
 
+      // Hash password if provided
+      if (updateUserDto.password) {
+        updateUserDto.password = await AuthUtils.hashPassword(updateUserDto.password);
+      }
+
       // Update user
       Object.assign(user, updateUserDto);
       const updatedUser = await this.userRepository.save(user);
@@ -176,10 +181,10 @@ export class UsersService {
 
     this.logger.log(
       `Deleting user`,
-      JSON.stringify({ 
-        userId: id, 
-        email: user.email, 
-        role: user.role, 
+      JSON.stringify({
+        userId: id,
+        email: user.email,
+        role: user.role,
         agencyId: user.agencyId,
         operation: 'delete',
       }),
@@ -189,8 +194,8 @@ export class UsersService {
 
     this.logger.log(
       `User deleted successfully`,
-      JSON.stringify({ 
-        userId: id, 
+      JSON.stringify({
+        userId: id,
         agencyId: user.agencyId,
         operation: 'delete',
       }),

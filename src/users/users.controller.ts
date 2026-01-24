@@ -112,6 +112,24 @@ export class UsersController {
     return this.usersService.findOne(req.user.sub);
   }
 
+  @Patch('profile')
+  @ApiOperation({ summary: 'Update current user profile' })
+  @ApiResponse({
+    status: 200,
+    description: 'Profile successfully updated',
+  })
+  @ApiResponse({
+    status: 400,
+    description: 'Invalid input data',
+  })
+  @ApiResponse({
+    status: 401,
+    description: 'Unauthorized - JWT token missing or invalid',
+  })
+  updateProfile(@Request() req: any, @Body() updateUserDto: UpdateUserDto) {
+    return this.usersService.update(req.user.sub, updateUserDto);
+  }
+
   @Get(':id')
   @Roles(UserRole.ADMIN, UserRole.PLATFORM_ADMIN)
   @ApiOperation({ summary: 'Get a user by ID' })

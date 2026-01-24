@@ -87,12 +87,14 @@ export class PropertiesController {
     @Query('type', new SanitizationPipe()) type?: string,
     @Query('minPrice', new ParseIntPipe({ optional: true })) minPrice?: number,
     @Query('maxPrice', new ParseIntPipe({ optional: true })) maxPrice?: number,
+    @Query('status', new SanitizationPipe()) status?: string,
   ) {
     const filters = {
       city,
       type,
       minPrice,
       maxPrice,
+      status: status as any, // Cast to PropertyStatus in service
     };
 
     return this.propertiesService.findAll(agencyId, page, limit, filters);
