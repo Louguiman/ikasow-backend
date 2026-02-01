@@ -1,4 +1,4 @@
-import { Module, NestModule, MiddlewareConsumer } from '@nestjs/common';
+import { Module, NestModule, MiddlewareConsumer, OnApplicationBootstrap } from '@nestjs/common';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { WinstonModule } from 'nest-winston';
@@ -33,6 +33,9 @@ import { AuthorizationLoggingInterceptor } from './common/interceptors/authoriza
 import { AgencyContextMiddleware } from './common/middleware/agency-context.middleware';
 import { Agency } from './agencies/entities/agency.entity';
 
+import { SeederModule } from './database/seeder/seeder.module';
+import { SeederService } from './database/seeder/seeder.service';
+
 @Module({
   imports: [
     // Configuration
@@ -50,7 +53,12 @@ import { Agency } from './agencies/entities/agency.entity';
         if (!dbConfig) {
           throw new Error('Database configuration not found');
         }
-        return dbConfig;
+        return {
+          ...dbConfig,
+          dropSchema: true,
+          synchronize: true,
+          migrationsRun: false,
+        };
       },
       inject: [ConfigService],
     }),
@@ -92,6 +100,7 @@ import { Agency } from './agencies/entities/agency.entity';
     LeadsModule,
     NotificationsModule,
     PublicModule,
+    SeederModule,
   ],
   controllers: [AppController],
   providers: [
@@ -118,7 +127,13 @@ import { Agency } from './agencies/entities/agency.entity';
     },
   ],
 })
-export class AppModule implements NestModule {
+export class AppModule implements NestModule, OnApplicationBootstrap {
+  constructor(private readonly seederService: SeederService) { }
+
+  async onApplicationBootstrap() {
+    await this.seederService.seed();
+  }
+
   configure(consumer: MiddlewareConsumer) {
     // Apply agency context middleware to all public routes
     consumer

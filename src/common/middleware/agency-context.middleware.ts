@@ -21,73 +21,65 @@ export class AgencyContextMiddleware implements NestMiddleware {
   constructor(
     @InjectRepository(Agency)
     private agencyRepository: Repository<Agency>,
-  ) {}
+  ) { }
 
   async use(req: Request, _res: Response, next: NextFunction) {
     try {
-      // Parse host header to extract subdomain
-      const host = req.headers.host || '';
-      const agencyId = await this.extractAgencyIdFromHost(host);
+      const identifier = this.extractIdentifierFromPath(req.originalUrl);
+      const agencyId = await this.resolveAgencyId(identifier);
 
       if (agencyId) {
-        // Attach agencyId to request context
         req.agencyId = agencyId;
-        this.logger.debug(`Agency context set: ${agencyId} for host: ${host}`);
+        this.logger.debug(`Agency context set: ${agencyId} for identifier: ${identifier}`);
       } else {
-        this.logger.debug(`No agency found for host: ${host}`);
+        this.logger.debug(`No agency found for identifier: ${identifier}`);
       }
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-      this.logger.error(`Error extracting agency from host: ${errorMessage}`);
-      // Don't block the request if agency extraction fails
-      // The controller can handle missing agency context
+      this.logger.error(`Error resolving agency context: ${errorMessage}`);
     }
 
     next();
   }
 
-  /**
-   * Extract agency ID from host header
-   * Parses subdomain from host (e.g., "agency1.ikasow.com" -> "agency1")
-   * and looks up agency by subdomain in database
-   */
-  private async extractAgencyIdFromHost(host: string): Promise<string | undefined> {
-    if (!host) {
-      return undefined;
-    }
+  private extractIdentifierFromPath(url: string): string | undefined {
+    // Expected format: /api/public/:identifier/... or /public/:identifier/...
+    const match = url.match(/\/public\/([^\/]+)/);
+    return match ? match[1] : undefined;
+  }
 
-    // Remove port if present (e.g., "localhost:3000" -> "localhost")
-    const hostWithoutPort = host.split(':')[0];
+  private async resolveAgencyId(identifier: string | undefined): Promise<string | undefined> {
+    if (!identifier) return undefined;
 
-    // Split by dots to get subdomain
-    const parts = hostWithoutPort.split('.');
-
-    // If we have at least 3 parts (subdomain.domain.tld), extract subdomain
-    // For localhost or single-part domains, return undefined
-    if (parts.length < 2) {
-      return undefined;
-    }
-
-    // Extract subdomain (first part)
-    const subdomain = parts[0];
-
-    // Skip common non-agency subdomains
-    const skipSubdomains = ['www', 'api', 'admin', 'localhost'];
-    if (skipSubdomains.includes(subdomain.toLowerCase())) {
-      return undefined;
-    }
-
-    // Look up agency by subdomain
     try {
-      const agency = await this.agencyRepository.findOne({
-        where: { subdomain, isActive: true },
-        select: ['id', 'subdomain'],
-      });
+      // 1. Check if identifier is a UUID (Direct ID lookup)
+      const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(identifier);
+      if (isUuid) {
+        const agency = await this.agencyRepository.findOne({ where: { id: identifier, isActive: true }, select: ['id'] });
+        if (agency) return agency.id;
+      }
 
-      return agency?.id;
+      // 2. Check as Subdomain/Slug
+      const agencyBySlug = await this.agencyRepository.findOne({
+        where: { subdomain: identifier, isActive: true },
+        select: ['id'],
+      });
+      if (agencyBySlug) return agencyBySlug.id;
+
+      // 3. Fallback: 'demo' if request was for 'demo' specifically (handled above) 
+      // OR if we want to allow a specific fallback logic.
+      // Current requirement: "for the agency it should just be a path".
+      // So if path is provided but invalid, we probably return undefined (404).
+      // However, if the user still wants the 'demo' fallback for dev convenience when accessing root or invalid paths:
+
+      if (identifier === 'demo') {
+        // Explicit 'demo' check already covered by slug lookup
+      }
+
+      return undefined;
+
     } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-      this.logger.error(`Error looking up agency by subdomain: ${errorMessage}`);
+      this.logger.error(`Error resolving agency ID: ${error}`);
       return undefined;
     }
   }

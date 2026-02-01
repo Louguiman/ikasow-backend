@@ -52,13 +52,15 @@ export class AddPropertyOperationType1764366200000 implements MigrationInterface
         await queryRunner.query(
             `ALTER TABLE "properties" ADD COLUMN IF NOT EXISTS "slug" varchar`
         );
-        try {
-            await queryRunner.query(
-                `ALTER TABLE "properties" ADD CONSTRAINT "UQ_properties_slug" UNIQUE ("slug")`
-            );
-        } catch (e) {
-            // Ignore unique constraint error
-        }
+        await queryRunner.query(`
+            DO $$
+            BEGIN
+                IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'UQ_properties_slug') THEN
+                    ALTER TABLE "properties" ADD CONSTRAINT "UQ_properties_slug" UNIQUE ("slug");
+                END IF;
+            END
+            $$;
+        `);
     }
 
     public async down(queryRunner: QueryRunner): Promise<void> {

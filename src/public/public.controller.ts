@@ -6,7 +6,7 @@ import { CurrentAgencyId } from '../common/decorators/current-agency-id.decorato
 import { CreateLeadDto } from '../leads/dto/create-lead.dto';
 
 @ApiTags('public')
-@Controller('public')
+@Controller('public/:agencyIdentifier')
 @Public()
 export class PublicController {
     constructor(private readonly publicService: PublicService) { }

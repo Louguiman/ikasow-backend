@@ -92,8 +92,8 @@ async function bootstrap() {
 
   // Swagger documentation
   const config = new DocumentBuilder()
-    .setTitle('IMMOMALI Backend API')
-    .setDescription('RESTful API for IMMOMALI real estate management platform')
+    .setTitle('IKASOW Backend API')
+    .setDescription('RESTful API for IKASOW real estate management platform')
     .setVersion('1.0')
     .addBearerAuth()
     .addTag('auth', 'Authentication endpoints')
