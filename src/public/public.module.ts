@@ -8,10 +8,12 @@ import { UsersModule } from '../users/users.module';
 import { LeadsModule } from '../leads/leads.module';
 import { Property } from '../properties/entities/property.entity';
 import { NotificationsModule } from '../notifications/notifications.module';
+import { AuthModule } from '../auth/auth.module';
 
 @Module({
     imports: [
         TypeOrmModule.forFeature([Property]),
+        AuthModule,
         PropertiesModule,
         AgenciesModule,
         UsersModule,

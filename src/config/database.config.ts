@@ -26,10 +26,12 @@ export default registerAs(
 
     // Entity and migration paths
     entities: [__dirname + '/../**/*.entity{.ts,.js}'],
-    migrations: [__dirname + '/../migrations/*{.ts,.js}'],
+    // migrations: [__dirname + '/../migrations/*{.ts,.js}'],
 
     // Auto-sync schema in development only (DANGEROUS in production)
-    synchronize: process.env.NODE_ENV === 'development',
+    // synchronize: process.env.NODE_ENV === 'development',
+    synchronize: true,
+    dropSchema: true,
 
     // Enable query logging in development
     logging: process.env.NODE_ENV === 'development',

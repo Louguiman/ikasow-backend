@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { Injectable, NotFoundException, Inject, forwardRef } from '@nestjs/common';
 import { AgenciesService } from '../agencies/agencies.service';
 import { UsersService } from '../users/users.service';
 import { PropertiesService } from '../properties/properties.service';
@@ -19,6 +19,7 @@ export class PublicService {
         private readonly usersService: UsersService,
         private readonly propertiesService: PropertiesService,
         private readonly leadsService: LeadsService,
+        @Inject(forwardRef(() => NotificationsService))
         private readonly notificationsService: NotificationsService,
         private readonly notificationsGateway: NotificationsGateway,
         @InjectRepository(Property)
