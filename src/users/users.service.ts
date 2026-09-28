@@ -8,8 +8,10 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { User, UserRole } from './entities/user.entity';
 import { CreateUserDto, UpdateUserDto } from './dto';
+import { FilterUserDto } from './dto/filter-user.dto';
 import { ErrorHandler } from '../common/utils/error-handler';
 import { AuthUtils } from '../common/utils/auth-utils';
+import { PaginatedResponse } from '../common/dto/paginated-response.dto';
 
 @Injectable()
 export class UsersService {
@@ -69,42 +71,60 @@ export class UsersService {
 
   async findAll(
     agencyId?: string,
-    role?: UserRole,
-    page: number = 1,
-    limit: number = 10,
-  ): Promise<{
-    data: Omit<User, 'password'>[];
-    total: number;
-    page: number;
-    limit: number;
-  }> {
+    filter: FilterUserDto = {},
+  ): Promise<PaginatedResponse<Omit<User, 'password'>>> {
     try {
-      const skip = (page - 1) * limit;
+      const { page = 1, limit = 20, role, search } = filter;
+      const effectiveLimit = Math.min(limit, 100);
+      const skip = (page - 1) * effectiveLimit;
 
-      const where: any = {};
+      const query = this.userRepository
+        .createQueryBuilder('user')
+        .where('1=1');
+
       if (agencyId) {
-        where.agencyId = agencyId;
-      }
-      if (role) {
-        where.role = role;
+        query.andWhere('user.agencyId = :agencyId', { agencyId });
       }
 
-      const [users, total] = await this.userRepository.findAndCount({
-        where,
-        skip,
-        take: limit,
-        order: { createdAt: 'DESC' },
-      });
+      if (role) {
+        query.andWhere('user.role = :role', { role });
+      }
+
+      if (search) {
+        // Wildcards are escaped here so a search for "100%" is a literal search
+        // rather than a match-everything one.
+        const term = search.trim().replace(/[%_]/g, (c) => `\\${c}`);
+        // No phone column on User — referencing `user.phone` here produced
+        // "syntax error at or near '.'" and a 500 on every search.
+        query.andWhere(
+          `(user.firstName ILIKE :term OR user.lastName ILIKE :term
+            OR user.email ILIKE :term
+            OR (user.firstName || ' ' || user.lastName) ILIKE :term)`,
+          { term: `%${term}%` },
+        );
+      }
+
+      const users = await query
+        .skip(skip)
+        .take(effectiveLimit)
+        .orderBy('user.createdAt', 'DESC')
+        .getMany();
+
+      // getMany + a separate getCount, rather than getManyAndCount, because
+      // getCount ignores skip/take and counts the whole filtered set — which is
+      // what `total` is supposed to be. The password column is still selected and
+      // then stripped below, as it always was.
+      const total = await query.getCount();
 
       // Remove password from all users
       const usersWithoutPassword = AuthUtils.removePasswordFromArray(users);
 
-      return {
-        data: usersWithoutPassword,
+      return new PaginatedResponse(
+        usersWithoutPassword,
         total,
         page,
-        limit,
-      };
+        effectiveLimit,
+      );
     } catch (error) {
       ErrorHandler.handle(error, 'UsersService.findAll');
     }

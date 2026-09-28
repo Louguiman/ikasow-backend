@@ -11,6 +11,7 @@ import { User } from '../users/entities/user.entity';
 import { CreateAgencyDto } from './dto/create-agency.dto';
 import { UpdateAgencyDto } from './dto/update-agency.dto';
 import { ErrorHandler } from '../common/utils/error-handler';
+import { PaginatedResponse } from '../common/dto/paginated-response.dto';
 import { CacheService } from '../cache/cache.service';
 
 @Injectable()
@@ -21,30 +22,80 @@ export class AgenciesService {
     @InjectRepository(User)
     private readonly userRepository: Repository<User>,
     private cacheService: CacheService,
-  ) { }
+  ) {}
 
   async create(createAgencyDto: CreateAgencyDto): Promise<Agency> {
     try {
       // Check if email already exists
       await this.checkEmailUniqueness(createAgencyDto.email);
 
-      // Check if subdomain already exists (if provided)
-      if (createAgencyDto.subdomain) {
-        await this.checkSubdomainUniqueness(createAgencyDto.subdomain);
+      // The subdomain is the agency's public portal identity, so it is derived rather
+      // than left null. It used to be optional and simply never set, which produced an
+      // agency with no reachable portal at all: the resolver has no other way in.
+      const requested = createAgencyDto.subdomain?.toLowerCase().trim();
+      if (requested) {
+        await this.checkSubdomainUniqueness(requested);
       }
+      const subdomain =
+        requested ??
+        (await this.generateAvailableSubdomain(createAgencyDto.name));
 
-      const agency = this.agencyRepository.create(createAgencyDto);
+      const agency = this.agencyRepository.create({
+        ...createAgencyDto,
+        subdomain,
+      });
       return await this.agencyRepository.save(agency);
     } catch (error) {
       ErrorHandler.handle(error, 'AgenciesService.create');
     }
   }
 
+  /**
+   * Slugify the agency name and add a numeric suffix until it is free. The unique
+   * index is the authority here — a concurrent create can still take the name between
+   * this check and the insert, and that surfaces as a 23505 which ErrorHandler maps to
+   * a ConflictException rather than being silently ignored.
+   */
+  private async generateAvailableSubdomain(name: string): Promise<string> {
+    const base = AgenciesService.slugify(name);
+    for (let attempt = 0; attempt < 50; attempt += 1) {
+      const candidate = attempt === 0 ? base : `${base}-${attempt + 1}`;
+      const taken = await this.agencyRepository.exists({
+        where: { subdomain: candidate },
+      });
+      if (!taken) {
+        return candidate;
+      }
+    }
+    // 50 collisions on one name means something is wrong upstream, not that we should
+    // hand back a duplicate.
+    throw new ConflictException(
+      'Could not allocate a unique subdomain; please provide one',
+    );
+  }
+
+  /**
+   * Lowercase, strip accents, collapse anything that is not a letter or digit to a
+   * single hyphen. Names that slugify to nothing (e.g. "***") fall back to `agency`,
+   * which the suffix loop still disambiguates.
+   */
+  private static slugify(name: string): string {
+    const slug = name
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, '-')
+      .replace(/^-+|-+$/g, '')
+      .slice(0, 50)
+      .replace(/-+$/g, '');
+    return slug.length >= 2 ? slug : 'agency';
+  }
+
   async findAll(
     isActive?: boolean,
     page: number = 1,
     limit: number = 10,
-  ): Promise<{ data: Agency[]; total: number; page: number; limit: number }> {
+  ): Promise<PaginatedResponse<Agency>> {
     try {
       const where = isActive !== undefined ? { isActive } : {};
       const skip = (page - 1) * limit;
@@ -56,12 +107,7 @@ export class AgenciesService {
         order: { createdAt: 'DESC' },
       });
 
-      return {
-        data,
-        total,
-        page,
-        limit,
-      };
+      return new PaginatedResponse(data, total, page, limit);
     } catch (error) {
       ErrorHandler.handle(error, 'AgenciesService.findAll');
     }
@@ -87,7 +133,10 @@ export class AgenciesService {
       }
 
       // Check if subdomain is being updated and if it already exists
-      if (updateAgencyDto.subdomain && updateAgencyDto.subdomain !== agency.subdomain) {
+      if (
+        updateAgencyDto.subdomain &&
+        updateAgencyDto.subdomain !== agency.subdomain
+      ) {
         await this.checkSubdomainUniqueness(updateAgencyDto.subdomain);
       }
 

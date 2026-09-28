@@ -11,8 +11,15 @@ import {
 import { User } from '../../users/entities/user.entity';
 import { Agency } from '../../agencies/entities/agency.entity';
 
+export enum ClientStatus {
+  ACTIVE = 'active',
+  PROSPECT = 'prospect',
+  FORMER = 'former',
+}
+
 @Entity('clients')
 @Index(['agencyId', 'email'])
+@Index(['agencyId', 'status'])
 export class Client {
   @PrimaryGeneratedColumn('uuid')
   id: string;
@@ -77,6 +84,16 @@ export class Client {
 
   @Column('text', { nullable: true })
   notes: string;
+
+  // Added by 1764366400000. Clients.tsx filtered on this before the column
+  // existed, so the filter was accepted and then silently ignored.
+  @Column({
+    type: 'enum',
+    enum: ClientStatus,
+    enumName: 'client_status_enum',
+    default: ClientStatus.ACTIVE,
+  })
+  status: ClientStatus;
 
   @CreateDateColumn({ name: 'created_at' })
   createdAt: Date;

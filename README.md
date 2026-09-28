@@ -94,35 +94,46 @@ npm run migration:revert
 ## Testing
 
 ```bash
-# Unit tests
+# Unit tests (pure unit; one DB-backed spec needs a throwaway `ikasow_test`
+# database — see AGENTS.md for the exact invocation)
 npm test
 
-# E2E tests
+# E2E smoke test — boots the whole app against a throwaway DB (DB_* env,
+# DB_RESET=true). It is destructive to the database it points at.
 npm run test:e2e
 
 # Test coverage
 npm run test:cov
 ```
 
+The e2e spec (`test/app.e2e-spec.ts`) is a real smoke test: it checks the welcome
+message, `/api/health` against the DB, a login→profile round trip, a scoped list and
+the whitelist pipe. It needs `DB_*` env vars (see AGENTS.md) and uses the same
+compose Redis as the DB-backed unit spec.
+
 ## Project Structure
 
 ```
 src/
-├── config/              # Configuration files
-├── common/              # Shared utilities, filters, guards
+├── config/              # Configuration files (env validation, cache, db)
+├── common/              # Shared utilities, filters, guards, files controller
 ├── auth/                # Authentication module
 ├── users/               # User management
+├── agencies/            # Agency management (multi-tenant, public portal resolution)
 ├── properties/          # Property management
 ├── tenants/             # Tenant management
 ├── clients/             # Client management
 ├── invoices/            # Invoice management
+├── leases/              # Lease contracts (dedicated table)
 ├── service-requests/    # Service request management
 ├── mandates/            # Mandate management
 ├── payments/            # Payment management
 ├── activities/          # Activity tracking
-├── notifications/       # Notification management
-├── reports/             # Financial reports
-├── uploads/             # File upload handling
+├── notifications/       # Notification management per user (+ Socket.IO gateway)
+├── documents/           # Scoped document uploads (file + metadata)
+├── leads/               # Lead capture for the public portal
+├── public/              # Public portal (tenant resolved from the URL path)
+├── cache/               # Redis-backed cache (CacheService + SCAN invalidation)
 └── migrations/          # Database migrations
 ```
 
@@ -139,7 +150,7 @@ src/
 | DATABASE_NAME | Database name | immomali |
 | JWT_SECRET | JWT secret key | - |
 | JWT_EXPIRATION | JWT token expiration | 1h |
-| CORS_ORIGIN | Allowed CORS origin | http://localhost:5173 |
+| CORS_ORIGIN | Allowed CORS origin | http://localhost:8080 |
 | UPLOAD_DIR | File upload directory | ./uploads |
 | MAX_FILE_SIZE | Max file size in bytes | 5242880 (5MB) |
 

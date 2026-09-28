@@ -22,6 +22,9 @@ import { InvoicesModule } from './invoices/invoices.module';
 import { ServiceRequestsModule } from './service-requests/service-requests.module';
 import { LeadsModule } from './leads/leads.module';
 import { NotificationsModule } from './notifications/notifications.module';
+import { PaymentsModule } from './payments/payments.module';
+import { LeasesModule } from './leases/leases.module';
+import { DocumentsModule } from './documents/documents.module';
 import { PublicModule } from './public/public.module';
 import { JwtAuthGuard } from './auth/guards/jwt-auth.guard';
 import { RolesGuard } from './auth/guards/roles.guard';
@@ -53,12 +56,10 @@ import { SeederService } from './database/seeder/seeder.service';
         if (!dbConfig) {
           throw new Error('Database configuration not found');
         }
-        return {
-          ...dbConfig,
-          dropSchema: true,
-          synchronize: true,
-          migrationsRun: false,
-        };
+        // dropSchema/synchronize/migrationsRun are decided in database.config.ts by
+        // DB_RESET. They used to be hardcoded to `dropSchema: true, synchronize: true`
+        // here as well, which meant every boot wiped the database.
+        return { ...dbConfig };
       },
       inject: [ConfigService],
     }),
@@ -99,6 +100,9 @@ import { SeederService } from './database/seeder/seeder.service';
     ServiceRequestsModule,
     LeadsModule,
     NotificationsModule,
+    PaymentsModule,
+    LeasesModule,
+    DocumentsModule,
     PublicModule,
     SeederModule,
   ],

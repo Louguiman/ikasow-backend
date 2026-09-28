@@ -7,10 +7,10 @@ import {
   Param,
   Delete,
   Query,
-  ParseIntPipe,
 } from '@nestjs/common';
 import { ApiTags, ApiBearerAuth, ApiOperation, ApiResponse } from '@nestjs/swagger';
 import { InvoicesService } from './invoices.service';
+import { FilterInvoiceDto } from './dto/filter-invoice.dto';
 import { CreateInvoiceDto } from './dto/create-invoice.dto';
 import { UpdateInvoiceDto } from './dto/update-invoice.dto';
 import { Roles } from '../auth/decorators/roles.decorator';
@@ -42,8 +42,11 @@ export class InvoicesController {
     status: 403,
     description: 'Forbidden - Insufficient permissions',
   })
-  create(@Body() createInvoiceDto: CreateInvoiceDto) {
-    return this.invoicesService.create(createInvoiceDto);
+  create(
+    @Body() createInvoiceDto: CreateInvoiceDto,
+    @CurrentAgencyId() agencyId: string,
+  ) {
+    return this.invoicesService.create(createInvoiceDto, agencyId);
   }
 
   @Get()
@@ -63,12 +66,9 @@ export class InvoicesController {
   })
   findAll(
     @CurrentAgencyId() agencyId: string,
-    @Query('page', new ParseIntPipe({ optional: true })) page?: number,
-    @Query('limit', new ParseIntPipe({ optional: true })) limit?: number,
-    @Query('tenantId') tenantId?: string,
-    @Query('clientId') clientId?: string,
+    @Query() filter: FilterInvoiceDto,
   ) {
-    return this.invoicesService.findAll(agencyId, page || 1, limit || 10, tenantId, clientId);
+    return this.invoicesService.findAll(agencyId, filter);
   }
 
   @Get(':id')

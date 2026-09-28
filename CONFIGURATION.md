@@ -70,7 +70,7 @@ These variables have sensible defaults and can be omitted:
 | `REFRESH_TOKEN_EXPIRATION` | Refresh token lifetime | `7d` |
 | `UPLOAD_DIR` | File upload directory | `./uploads` |
 | `MAX_FILE_SIZE` | Max upload size (bytes) | `5242880` (5MB) |
-| `CORS_ORIGIN` | Allowed CORS origin | `http://localhost:5173` |
+| `CORS_ORIGIN` | Allowed CORS origin | `http://localhost:8080` |
 | `LOG_LEVEL` | Logging verbosity | `info` |
 | `REDIS_HOST` | Redis server hostname | `localhost` |
 | `REDIS_PORT` | Redis server port | `6379` |
@@ -148,6 +148,18 @@ Features:
 - Separate test database
 - Fast execution
 
+> **Two naming conventions.** The app itself only reads `DATABASE_*`. The jest
+> DB-backed specs (`property-publishing.spec.ts`) and the e2e smoke test
+> (`test/app.e2e-spec.ts`) read `DB_*` (`DB_HOST`, `DB_PORT`, `DB_USERNAME`,
+> `DB_PASSWORD`, `DB_NAME`) instead, and fall back to `localhost:5432
+> postgres/postgres` database `ikasow_test`. `test/setup-e2e-env.ts` maps the two.
+> Also set `REDIS_PORT=56379` (the compose override) so the e2e app does not
+> attach to whatever is listening on host 6379.
+>
+> `DB_RESET=true` makes boot drop and rebuild the schema from the entities —
+> destructive. The e2e sets it on purpose for the throwaway DB; never on a
+> database you care about.
+
 ## Accessing Configuration
 
 ### In Services/Controllers
@@ -215,7 +227,7 @@ const jwtSecret = this.configService.get<string>('JWT_SECRET');
 
 ⚠️ **IMPORTANT**: Never commit `.env` files to version control!
 
-See [CONFIGURATION_SECURITY.md](./CONFIGURATION_SECURITY.md) for detailed security guidelines.
+See [CONFIGURATION_SECURITY.md](./docs/historical/CONFIGURATION_SECURITY.md) for detailed security guidelines.
 
 ### Quick Security Checklist
 

@@ -12,8 +12,17 @@ import { Type } from 'class-transformer';
 import { ApiPropertyOptional } from '@nestjs/swagger';
 import { PropertyType } from '../entities/property.entity';
 import { Sanitize } from '../../common/decorators/sanitize.decorator';
+import { PaginationDto } from '../../common/dto/pagination.dto';
 
-export class PublicPropertyFiltersDto {
+/**
+ * Query filters for the public property listing.
+ *
+ * Extends PaginationDto rather than redeclaring page/limit: the public portal used
+ * to carry its own copy with a different default, which is how the two lists drifted
+ * apart. The public routes are agency-scoped by the path, so there is deliberately
+ * no agencyId here — a caller cannot ask for another agency's listings.
+ */
+export class PublicPropertyFiltersDto extends PaginationDto {
   @ApiPropertyOptional({
     description: 'Filter by property type',
     enum: PropertyType,
@@ -87,7 +96,7 @@ export class PublicPropertyFiltersDto {
   minRooms?: number;
 
   @ApiPropertyOptional({
-    description: 'Search query for property title or description',
+    description: 'Search query for property title, description or city',
     example: 'modern apartment',
     maxLength: 200,
   })
@@ -96,30 +105,4 @@ export class PublicPropertyFiltersDto {
   @MaxLength(200)
   @Sanitize()
   search?: string;
-
-  @ApiPropertyOptional({
-    description: 'Page number (1-indexed)',
-    minimum: 1,
-    default: 1,
-    example: 1,
-  })
-  @IsOptional()
-  @Type(() => Number)
-  @IsInt()
-  @Min(1)
-  page?: number = 1;
-
-  @ApiPropertyOptional({
-    description: 'Number of items per page',
-    minimum: 1,
-    maximum: 100,
-    default: 12,
-    example: 12,
-  })
-  @IsOptional()
-  @Type(() => Number)
-  @IsInt()
-  @Min(1)
-  @Max(100)
-  limit?: number = 12;
 }

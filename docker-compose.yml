@@ -64,6 +64,11 @@ services:
       MAX_FILE_SIZE: 5242880
       LOG_LEVEL: info
     volumes:
+      # These are host bind mounts, so Docker creates them owned by root while the
+      # container runs as uid 1001 (nestjs) — which is what the image sets up
+      # internally. Create them with matching ownership once, or file logging and
+      # uploads will be silently skipped (the entrypoint warns if they are not):
+      #   mkdir -p uploads logs && sudo chown 1001:1001 uploads logs
       - ./uploads:/app/uploads
       - ./logs:/app/logs
     depends_on:

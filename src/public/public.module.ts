@@ -7,21 +7,22 @@ import { AgenciesModule } from '../agencies/agencies.module';
 import { UsersModule } from '../users/users.module';
 import { LeadsModule } from '../leads/leads.module';
 import { Property } from '../properties/entities/property.entity';
+import { Agency } from '../agencies/entities/agency.entity';
 import { NotificationsModule } from '../notifications/notifications.module';
 import { AuthModule } from '../auth/auth.module';
 
 @Module({
-    imports: [
-        TypeOrmModule.forFeature([Property]),
-        AuthModule,
-        PropertiesModule,
-        AgenciesModule,
-        UsersModule,
-        LeadsModule,
-        NotificationsModule,
-    ],
-    controllers: [PublicController],
-    providers: [PublicService],
-    exports: [PublicService],
+  imports: [
+    TypeOrmModule.forFeature([Property, Agency]),
+    AuthModule,
+    PropertiesModule,
+    AgenciesModule,
+    UsersModule,
+    LeadsModule,
+    NotificationsModule,
+  ],
+  controllers: [PublicController],
+  providers: [PublicService],
+  exports: [PublicService],
 })
-export class PublicModule { }
+export class PublicModule {}

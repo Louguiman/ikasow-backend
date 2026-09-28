@@ -48,6 +48,7 @@ export class Mandate {
   @Column({
     type: 'enum',
     enum: MandateType,
+    enumName: 'mandate_type_enum',
   })
   type: MandateType;
 
@@ -68,6 +69,7 @@ export class Mandate {
   @Column({
     type: 'enum',
     enum: MandateStatus,
+    enumName: 'mandate_status_enum',
     default: MandateStatus.ACTIVE,
   })
   @Index()

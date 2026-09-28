@@ -7,13 +7,12 @@ import {
   Param,
   Delete,
   Query,
-  ParseIntPipe,
 } from '@nestjs/common';
 import { ApiTags, ApiBearerAuth, ApiOperation, ApiResponse } from '@nestjs/swagger';
 import { ClientsService } from './clients.service';
+import { FilterClientDto } from './dto/filter-client.dto';
 import { CreateClientDto } from './dto/create-client.dto';
 import { UpdateClientDto } from './dto/update-client.dto';
-import { MatchPropertiesDto } from './dto/match-properties.dto';
 import { Roles } from '../auth/decorators/roles.decorator';
 import { UserRole } from '../users/entities/user.entity';
 import { CurrentAgencyId } from '../common/decorators/current-agency-id.decorator';
@@ -69,32 +68,9 @@ export class ClientsController {
   })
   findAll(
     @CurrentAgencyId() agencyId: string,
-    @Query('page', new ParseIntPipe({ optional: true })) page?: number,
-    @Query('limit', new ParseIntPipe({ optional: true })) limit?: number,
+    @Query() filter: FilterClientDto,
   ) {
-    return this.clientsService.findAll(agencyId, page, limit);
-  }
-
-  @Get('match-properties')
-  @Roles(UserRole.ADMIN, UserRole.AGENT)
-  @ApiOperation({ summary: 'Match properties to client preferences' })
-  @ApiResponse({
-    status: 200,
-    description: 'Returns list of matching properties',
-  })
-  @ApiResponse({
-    status: 401,
-    description: 'Unauthorized - JWT token missing or invalid',
-  })
-  @ApiResponse({
-    status: 403,
-    description: 'Forbidden - Insufficient permissions',
-  })
-  matchProperties(
-    @Query() criteria: MatchPropertiesDto,
-    @CurrentAgencyId() agencyId: string,
-  ) {
-    return this.clientsService.matchProperties(agencyId, criteria);
+    return this.clientsService.findAll(agencyId, filter);
   }
 
   @Get(':id')

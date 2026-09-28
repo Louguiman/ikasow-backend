@@ -1,7 +1,9 @@
-import { Injectable, Inject } from '@nestjs/common';
+import { Injectable, Inject, Optional } from '@nestjs/common';
 import { CACHE_MANAGER } from '@nestjs/cache-manager';
 import type { Cache } from 'cache-manager';
+import type { RedisClientType } from 'redis';
 import { ConfigService } from '@nestjs/config';
+import { CACHE_CLIENT } from './cache.constants';
 
 @Injectable()
 export class CacheService {
@@ -11,6 +13,7 @@ export class CacheService {
   constructor(
     @Inject(CACHE_MANAGER) private cacheManager: Cache,
     private configService: ConfigService,
+    @Optional() @Inject(CACHE_CLIENT) private redisClient?: RedisClientType,
   ) {
     const cacheConfig = this.configService.get('cache');
     
@@ -46,18 +49,26 @@ export class CacheService {
   }
 
   /**
-   * Delete multiple keys matching a pattern
+   * Delete multiple keys matching a pattern.
+   *
+   * Iterates with `SCAN`, never `KEYS`: `KEYS` blocks the event loop for the
+   * whole match, which is exactly what matters while a publish/unpublish is
+   * invalidating a large `properties:list:*` set. Requires the raw redis
+   * client, which the module injects; without one (in-memory fallback, or a
+   * unit test) there is nothing to scan and the call is a no-op.
    */
   async delPattern(pattern: string): Promise<void> {
-    const stores = (this.cacheManager as any).stores;
-    if (stores && stores[0]) {
-      const store = stores[0] as any;
-      if (store.client && typeof store.client.keys === 'function') {
-        const keys = await store.client.keys(pattern);
-        if (keys && keys.length > 0) {
-          await Promise.all(keys.map((key: string) => this.cacheManager.del(key)));
-        }
-      }
+    if (!this.redisClient) {
+      return;
+    }
+
+    const keys: string[] = [];
+    for await (const key of this.redisClient.scanIterator({ MATCH: pattern })) {
+      keys.push(key);
+    }
+
+    if (keys.length > 0) {
+      await Promise.all(keys.map((key: string) => this.cacheManager.del(key)));
     }
   }
 

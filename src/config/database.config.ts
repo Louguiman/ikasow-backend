@@ -2,9 +2,35 @@ import { registerAs } from '@nestjs/config';
 import { TypeOrmModuleOptions } from '@nestjs/typeorm';
 
 /**
- * Database configuration
- * Configures PostgreSQL connection with TypeORM
+ * How TypeORM is allowed to change the schema.
+ *
+ * This used to be hardcoded to `dropSchema: true, synchronize: true`, duplicated in
+ * both `database.config.ts` and `app.module.ts`. That combination drops and recreates
+ * every table from the entities on *every* boot, so restarting the app silently
+ * deletes all data — and any row that violates a column constraint takes the process
+ * down with it, because the failure happens during bootstrap.
+ *
+ * Schema changes are now opt-in and explicit:
+ *
+ *   DB_RESET=true npm run start:dev     # local wipe: drop, then rebuild from entities
+ *   npm run migration:run               # the supported way to evolve a real database
+ *
+ * `migrationsRun` stays false in the app: `src/migrations/*` is applied by the CLI
+ * (or `docker-entrypoint.sh` in a container), never implicitly at boot.
  */
+export const schemaManagement = (): Pick<
+  TypeOrmModuleOptions,
+  'dropSchema' | 'synchronize' | 'migrationsRun'
+> => {
+  const reset = /^(true|1|yes)$/i.test(process.env.DB_RESET ?? '');
+
+  return {
+    dropSchema: reset,
+    synchronize: reset,
+    migrationsRun: false,
+  };
+};
+
 export default registerAs(
   'database',
   (): TypeOrmModuleOptions => ({
@@ -26,17 +52,11 @@ export default registerAs(
 
     // Entity and migration paths
     entities: [__dirname + '/../**/*.entity{.ts,.js}'],
-    // migrations: [__dirname + '/../migrations/*{.ts,.js}'],
+    migrations: [__dirname + '/migrations/*{.ts,.js}'],
 
-    // Auto-sync schema in development only (DANGEROUS in production)
-    // synchronize: process.env.NODE_ENV === 'development',
-    synchronize: true,
-    dropSchema: true,
+    ...schemaManagement(),
 
     // Enable query logging in development
     logging: process.env.NODE_ENV === 'development',
-
-    // Don't auto-run migrations (use CLI instead)
-    migrationsRun: false,
   }),
 );

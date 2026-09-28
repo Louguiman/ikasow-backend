@@ -8,18 +8,18 @@ import {
   Delete,
   Query,
   ParseUUIDPipe,
-  ParseIntPipe,
-  ParseEnumPipe,
   Request,
   ForbiddenException,
 } from '@nestjs/common';
 import { ApiTags, ApiBearerAuth, ApiOperation, ApiResponse } from '@nestjs/swagger';
 import { UsersService } from './users.service';
 import { CreateUserDto, UpdateUserDto } from './dto';
+import { UpdateProfileDto } from './dto/update-profile.dto';
 import { Roles } from '../auth/decorators/roles.decorator';
 import { UserRole } from './entities/user.entity';
 import { CurrentAgencyId } from '../common/decorators/current-agency-id.decorator';
 import { RoleHierarchy } from '../common/utils/role-hierarchy';
+import { FilterUserDto } from './dto/filter-user.dto';
 
 @ApiTags('users')
 @ApiBearerAuth()
@@ -90,12 +90,25 @@ export class UsersController {
   })
   findAll(
     @CurrentAgencyId() agencyId: string,
-    @Query('role', new ParseEnumPipe(UserRole, { optional: true }))
-    role?: UserRole,
-    @Query('page', new ParseIntPipe({ optional: true })) page?: number,
-    @Query('limit', new ParseIntPipe({ optional: true })) limit?: number,
+    @Query() filter: FilterUserDto,
+    @Request() req: any,
   ) {
-    return this.usersService.findAll(agencyId, role, page, limit);
+    // The agency scope comes from @CurrentAgencyId() and is always applied. Letting
+    // an ordinary agency admin override it through the query string would expose
+    // every user of every other tenant, so the override is platform-admin only.
+    const isPlatformAdmin = req.user.role === UserRole.PLATFORM_ADMIN;
+
+    if (filter.agencyId && !isPlatformAdmin && filter.agencyId !== agencyId) {
+      throw new ForbiddenException(
+        'Only a platform admin can list users from another agency',
+      );
+    }
+
+    const targetAgencyId = isPlatformAdmin
+      ? filter.agencyId || agencyId
+      : agencyId;
+
+    return this.usersService.findAll(targetAgencyId, filter);
   }
 
   @Get('profile')
@@ -126,8 +139,8 @@ export class UsersController {
     status: 401,
     description: 'Unauthorized - JWT token missing or invalid',
   })
-  updateProfile(@Request() req: any, @Body() updateUserDto: UpdateUserDto) {
-    return this.usersService.update(req.user.sub, updateUserDto);
+  updateProfile(@Request() req: any, @Body() updateProfileDto: UpdateProfileDto) {
+    return this.usersService.update(req.user.sub, updateProfileDto);
   }
 
   @Get(':id')

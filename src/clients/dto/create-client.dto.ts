@@ -13,15 +13,20 @@ import {
   MaxLength,
 } from 'class-validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import { IsEnum } from 'class-validator';
+import { ClientStatus } from '../entities/client.entity';
 
 export class CreateClientDto {
-  @ApiProperty({
-    description: 'Agency ID that the client belongs to',
-    example: '123e4567-e89b-12d3-a456-426614174000',
+  @ApiPropertyOptional({
+    description:
+      'Agency the client belongs to. Ignored when present: the controller always ' +
+      'overwrites it with the caller\'s agency from the request context. It was ' +
+      'required here, which meant a client could not be created from the UI at all ' +
+      'unless the caller already knew the agency UUID.',
   })
-  @IsNotEmpty()
+  @IsOptional()
   @IsUUID()
-  agencyId: string;
+  agencyId?: string;
 
   @ApiPropertyOptional({
     description: 'User ID if client has a user account',
@@ -129,4 +134,14 @@ export class CreateClientDto {
   @IsString()
   @MaxLength(2000)
   notes?: string;
+
+  @ApiPropertyOptional({
+    description: 'Lifecycle status of the client',
+    enum: ClientStatus,
+    example: ClientStatus.PROSPECT,
+    default: ClientStatus.ACTIVE,
+  })
+  @IsOptional()
+  @IsEnum(ClientStatus)
+  status?: ClientStatus;
 }

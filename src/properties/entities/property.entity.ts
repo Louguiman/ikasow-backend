@@ -35,6 +35,10 @@ export enum PropertyOperation {
 }
 
 @Entity('properties')
+// Declared here as well as in the migrations: every list route filters on
+// agency + status, and an index that only one of the two knows about gets
+// dropped the next time someone runs synchronize.
+@Index(['agencyId', 'status'])
 export class Property {
   @PrimaryGeneratedColumn('uuid')
   id: string;
@@ -56,6 +60,7 @@ export class Property {
   @Column({
     type: 'enum',
     enum: PropertyType,
+    enumName: 'property_type_enum',
   })
   @Index()
   type: PropertyType;
@@ -64,6 +69,7 @@ export class Property {
     name: 'operation_type',
     type: 'enum',
     enum: PropertyOperation,
+    enumName: 'property_operation_enum',
     default: PropertyOperation.SALE,
   })
   @Index()
@@ -98,6 +104,7 @@ export class Property {
   @Column({
     type: 'enum',
     enum: PropertyStatus,
+    enumName: 'property_status_enum',
     default: PropertyStatus.DRAFT,
   })
   @Index()

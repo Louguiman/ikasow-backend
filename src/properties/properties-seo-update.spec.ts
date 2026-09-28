@@ -1,10 +1,12 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { PropertiesService } from './properties.service';
 import { getRepositoryToken } from '@nestjs/typeorm';
+import { DataSource } from 'typeorm';
 import { Property, PropertyStatus, PropertyType } from './entities/property.entity';
 import { PropertyImage } from './entities/property-image.entity';
 import { SlugService } from './slug.service';
 import { SeoService } from './seo.service';
+import { ImageProcessingService } from './image-processing.service';
 import { CacheService } from '../cache/cache.service';
 import { BadRequestException } from '@nestjs/common';
 
@@ -12,6 +14,7 @@ describe('PropertiesService - SEO Update Handling', () => {
   let service: PropertiesService;
   let mockPropertyRepository: any;
   let mockPropertyImageRepository: any;
+  let storedProperty: Property;
 
   const createMockProperty = (overrides = {}): Property => {
     const baseProperty = {
@@ -45,10 +48,19 @@ describe('PropertiesService - SEO Update Handling', () => {
   };
 
   beforeEach(async () => {
+    storedProperty = undefined;
     mockPropertyRepository = {
       create: jest.fn(),
       save: jest.fn(),
-      findOne: jest.fn(),
+      // baseUpdate persists via repository.update and then re-reads the row, so the
+      // mock has to mutate the stored entity the way TypeORM would.
+      update: jest.fn((_id: string, partial: Partial<Property>) => {
+        if (storedProperty) {
+          Object.assign(storedProperty, partial);
+        }
+        return Promise.resolve({ raw: [], generatedMaps: [] });
+      }),
+      findOne: jest.fn(() => Promise.resolve(storedProperty)),
       findAndCount: jest.fn(),
       remove: jest.fn(),
       createQueryBuilder: jest.fn(() => ({
@@ -82,6 +94,13 @@ describe('PropertiesService - SEO Update Handling', () => {
           useValue: mockPropertyImageRepository,
         },
         {
+          provide: ImageProcessingService,
+          useValue: {
+            processImage: jest.fn(),
+            deleteImageSizes: jest.fn(),
+          },
+        },
+        {
           provide: CacheService,
           useValue: {
             get: jest.fn(),
@@ -94,7 +113,7 @@ describe('PropertiesService - SEO Update Handling', () => {
           },
         },
         {
-          provide: 'DataSource',
+          provide: DataSource,
           useValue: {
             transaction: jest.fn((callback) => callback({
               create: jest.fn(),
@@ -116,7 +135,7 @@ describe('PropertiesService - SEO Update Handling', () => {
       const propertyId = 'test-id';
       const mockProperty = createMockProperty({ id: propertyId });
 
-      mockPropertyRepository.findOne.mockResolvedValue(mockProperty);
+      storedProperty = mockProperty;
 
       // Test with SEO title that's too short (< 30 characters)
       await expect(
@@ -128,7 +147,7 @@ describe('PropertiesService - SEO Update Handling', () => {
       const propertyId = 'test-id';
       const mockProperty = createMockProperty({ id: propertyId });
 
-      mockPropertyRepository.findOne.mockResolvedValue(mockProperty);
+      storedProperty = mockProperty;
 
       // Test with SEO description that's too short (< 120 characters)
       await expect(
@@ -143,7 +162,7 @@ describe('PropertiesService - SEO Update Handling', () => {
         description: 'A lovely apartment in the city center with modern amenities and great views',
       });
 
-      mockPropertyRepository.findOne.mockResolvedValue(mockProperty);
+      storedProperty = mockProperty;
       mockPropertyRepository.save.mockImplementation((prop: Property) => Promise.resolve(prop));
 
       const result = await service.update(propertyId, { title: 'Updated Title' }, 'agency-1');
@@ -160,7 +179,7 @@ describe('PropertiesService - SEO Update Handling', () => {
         description: 'A lovely apartment in the city center with modern amenities and great views. Perfect for families.',
       });
 
-      mockPropertyRepository.findOne.mockResolvedValue(mockProperty);
+      storedProperty = mockProperty;
       mockPropertyRepository.save.mockImplementation((prop: Property) => Promise.resolve(prop));
 
       const result = await service.update(propertyId, { description: 'Updated description with enough content to generate SEO metadata' }, 'agency-1');
@@ -174,7 +193,7 @@ describe('PropertiesService - SEO Update Handling', () => {
       const propertyId = 'test-id';
       const mockProperty = createMockProperty({ id: propertyId });
 
-      mockPropertyRepository.findOne.mockResolvedValue(mockProperty);
+      storedProperty = mockProperty;
       mockPropertyRepository.save.mockImplementation((prop: Property) => Promise.resolve(prop));
 
       const validSeoTitle = 'Beautiful Apartment in Paris - €250,000';

@@ -37,71 +37,118 @@ export class AddRelationshipsAndIndexes1736526000000
       `CREATE INDEX IF NOT EXISTS "IDX_agencies_subdomain" ON "agencies" ("subdomain")`,
     );
 
-    // Add agencyId to entities that are missing it
+    // Add agencyId to entities that are missing it.
+    //
+    // The previous version of this migration added the column as
+    //   NOT NULL DEFAULT '00000000-0000-0000-0000-000000000000'
+    // and then added the foreign key. That UUID belongs to no agency, so the FK
+    // only succeeded on an empty database: on any database that already had rows
+    // the whole migration aborted with
+    //   insert or update on table "users" violates foreign key constraint
+    //   "FK_users_agency"
+    // reproduced against a database holding a single pre-existing user.
+    //
+    // The column is therefore added nullable, filled from a real agency, and only
+    // then constrained — except on `users`, which stays nullable because the entity
+    // allows a user with no agency yet (see ReconcileSchemaWithEntities).
     // Core entities
     await queryRunner.query(
-      `ALTER TABLE "users" ADD COLUMN IF NOT EXISTS "agency_id" uuid NOT NULL DEFAULT '00000000-0000-0000-0000-000000000000'`,
+      `ALTER TABLE "users" ADD COLUMN IF NOT EXISTS "agency_id" uuid`,
     );
     await queryRunner.query(
-      `ALTER TABLE "properties" ADD COLUMN IF NOT EXISTS "agency_id" uuid NOT NULL DEFAULT '00000000-0000-0000-0000-000000000000'`,
+      `ALTER TABLE "properties" ADD COLUMN IF NOT EXISTS "agency_id" uuid`,
     );
     await queryRunner.query(
-      `ALTER TABLE "clients" ADD COLUMN IF NOT EXISTS "agency_id" uuid NOT NULL DEFAULT '00000000-0000-0000-0000-000000000000'`,
+      `ALTER TABLE "clients" ADD COLUMN IF NOT EXISTS "agency_id" uuid`,
     );
     await queryRunner.query(
-      `ALTER TABLE "tenants" ADD COLUMN IF NOT EXISTS "agency_id" uuid NOT NULL DEFAULT '00000000-0000-0000-0000-000000000000'`,
+      `ALTER TABLE "tenants" ADD COLUMN IF NOT EXISTS "agency_id" uuid`,
     );
 
     // Secondary entities
     await queryRunner.query(
-      `ALTER TABLE "invoices" ADD COLUMN IF NOT EXISTS "agency_id" uuid NOT NULL DEFAULT '00000000-0000-0000-0000-000000000000'`,
+      `ALTER TABLE "invoices" ADD COLUMN IF NOT EXISTS "agency_id" uuid`,
     );
     await queryRunner.query(
-      `ALTER TABLE "service_requests" ADD COLUMN IF NOT EXISTS "agency_id" uuid NOT NULL DEFAULT '00000000-0000-0000-0000-000000000000'`,
+      `ALTER TABLE "service_requests" ADD COLUMN IF NOT EXISTS "agency_id" uuid`,
     );
     await queryRunner.query(
-      `ALTER TABLE "activities" ADD COLUMN IF NOT EXISTS "agency_id" uuid NOT NULL DEFAULT '00000000-0000-0000-0000-000000000000'`,
+      `ALTER TABLE "activities" ADD COLUMN IF NOT EXISTS "agency_id" uuid`,
     );
     await queryRunner.query(
-      `ALTER TABLE "mandates" ADD COLUMN IF NOT EXISTS "agency_id" uuid NOT NULL DEFAULT '00000000-0000-0000-0000-000000000000'`,
+      `ALTER TABLE "mandates" ADD COLUMN IF NOT EXISTS "agency_id" uuid`,
     );
     await queryRunner.query(
-      `ALTER TABLE "payments" ADD COLUMN IF NOT EXISTS "agency_id" uuid NOT NULL DEFAULT '00000000-0000-0000-0000-000000000000'`,
+      `ALTER TABLE "payments" ADD COLUMN IF NOT EXISTS "agency_id" uuid`,
     );
 
     // Leads table
     await queryRunner.query(
-      `ALTER TABLE "leads" ADD COLUMN IF NOT EXISTS "agency_id" uuid NOT NULL DEFAULT '00000000-0000-0000-0000-000000000000'`,
+      `ALTER TABLE "leads" ADD COLUMN IF NOT EXISTS "agency_id" uuid`,
     );
 
-    // Remove default values after data migration (in production, you'd populate these first)
-    await queryRunner.query(
-      `ALTER TABLE "users" ALTER COLUMN "agency_id" DROP DEFAULT`,
+    // Point the pre-existing rows at a real agency. On an empty database nothing
+    // needs an owner, so no agency is invented — creating one unconditionally
+    // would leave a fresh install with a useless "Imported data" tenant and, worse,
+    // make SeederService see a non-empty agencies table and skip creating the demo
+    // agency, so there would be no admin@demo.com to log in with.
+    const agencies = await queryRunner.query(
+      `SELECT count(*)::int AS count FROM "agencies"`,
     );
-    await queryRunner.query(
-      `ALTER TABLE "properties" ALTER COLUMN "agency_id" DROP DEFAULT`,
+
+    // The tables whose agency_id is NOT NULL by the end of this migration.
+    const ownedTables = [
+      'properties', 'clients', 'tenants', 'invoices', 'service_requests',
+      'activities', 'mandates', 'payments', 'leads',
+    ];
+
+    let rowsToBackfill = 0;
+    for (const table of ownedTables) {
+      const r = await queryRunner.query(
+        `SELECT count(*)::int AS count FROM "${table}"`,
+      );
+      rowsToBackfill += r[0].count;
+    }
+    const userRows = await queryRunner.query(
+      `SELECT count(*)::int AS count FROM "users"`,
     );
-    await queryRunner.query(
-      `ALTER TABLE "clients" ALTER COLUMN "agency_id" DROP DEFAULT`,
-    );
-    await queryRunner.query(
-      `ALTER TABLE "tenants" ALTER COLUMN "agency_id" DROP DEFAULT`,
-    );
-    await queryRunner.query(
-      `ALTER TABLE "invoices" ALTER COLUMN "agency_id" DROP DEFAULT`,
-    );
-    await queryRunner.query(
-      `ALTER TABLE "service_requests" ALTER COLUMN "agency_id" DROP DEFAULT`,
-    );
-    await queryRunner.query(
-      `ALTER TABLE "activities" ALTER COLUMN "agency_id" DROP DEFAULT`,
-    );
-    await queryRunner.query(
-      `ALTER TABLE "mandates" ALTER COLUMN "agency_id" DROP DEFAULT`,
-    );
-    await queryRunner.query(
-      `ALTER TABLE "payments" ALTER COLUMN "agency_id" DROP DEFAULT`,
-    );
+
+    if (agencies[0].count === 0 && (rowsToBackfill > 0 || userRows[0].count > 0)) {
+      await queryRunner.query(`
+        INSERT INTO "agencies"
+          ("id", "name", "email", "subdomain", "phone", "address", "city", "postal_code")
+        VALUES
+          (uuid_generate_v4(), 'Imported data', 'imported@ikasow.invalid', NULL,
+           '+000 00 00 00 00', 'Imported', 'Imported', '00000')
+      `);
+    }
+
+    if (agencies[0].count > 0 || rowsToBackfill > 0 || userRows[0].count > 0) {
+      const owner = await queryRunner.query(
+        `SELECT "id" FROM "agencies" ORDER BY "created_at" ASC LIMIT 1`,
+      );
+      if (owner.length > 0) {
+        for (const table of ownedTables) {
+          await queryRunner.query(
+            `UPDATE "${table}" SET "agency_id" = $1 WHERE "agency_id" IS NULL`,
+            [owner[0].id],
+          );
+        }
+        await queryRunner.query(
+          `UPDATE "users" SET "agency_id" = $1 WHERE "agency_id" IS NULL`,
+          [owner[0].id],
+        );
+      }
+    }
+
+    // `users` is deliberately left nullable: the entity allows a user with no
+    // agency yet (see ReconcileSchemaWithEntities).
+    for (const table of ownedTables) {
+      await queryRunner.query(
+        `ALTER TABLE "${table}" ALTER COLUMN "agency_id" SET NOT NULL`,
+      );
+    }
+
 
     // Add indexes on foreign key columns
     await queryRunner.query(

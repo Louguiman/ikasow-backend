@@ -65,6 +65,7 @@ export class ServiceRequest {
   @Column({
     type: 'enum',
     enum: ServiceRequestStatus,
+    enumName: 'service_request_status_enum',
     default: ServiceRequestStatus.PENDING,
   })
   @Index()
@@ -73,6 +74,7 @@ export class ServiceRequest {
   @Column({
     type: 'enum',
     enum: ServiceRequestPriority,
+    enumName: 'service_request_priority_enum',
     default: ServiceRequestPriority.MEDIUM,
   })
   @Index()

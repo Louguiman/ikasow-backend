@@ -9,12 +9,19 @@ import {
 } from 'typeorm';
 import { Tenant } from '../../tenants/entities/tenant.entity';
 import { Agency } from '../../agencies/entities/agency.entity';
+import { Invoice } from '../../invoices/entities/invoice.entity';
 
 export enum PaymentMethod {
   CASH = 'cash',
   CHECK = 'check',
   BANK_TRANSFER = 'bank-transfer',
   CARD = 'card',
+}
+
+export enum PaymentStatus {
+  PENDING = 'pending',
+  PAID = 'paid',
+  CANCELLED = 'cancelled',
 }
 
 @Entity('payments')
@@ -50,6 +57,7 @@ export class Payment {
     name: 'payment_method',
     type: 'enum',
     enum: PaymentMethod,
+    enumName: 'payment_method_enum',
   })
   paymentMethod: PaymentMethod;
 
@@ -58,6 +66,32 @@ export class Payment {
 
   @Column('text', { nullable: true })
   notes: string;
+
+  /**
+   * `enumName` is explicit because TypeORM would otherwise generate a different
+   * type name than the migration created, and every `migration:generate` after
+   * this would propose a pointless `ALTER TYPE`.
+   */
+  @Column({
+    type: 'enum',
+    enum: PaymentStatus,
+    enumName: 'payment_status_enum',
+    default: PaymentStatus.PENDING,
+  })
+  status: PaymentStatus;
+
+  /**
+   * Optional link to the invoice this payment settles. Rent can be paid without
+   * an invoice, so the column is nullable; the FK is `ON DELETE SET NULL` so
+   * removing an invoice does not remove a record of money received.
+   */
+  @Column({ name: 'invoice_id', nullable: true })
+  @Index()
+  invoiceId: string | null;
+
+  @ManyToOne(() => Invoice, { onDelete: 'SET NULL', nullable: true })
+  @JoinColumn({ name: 'invoice_id' })
+  invoice: Invoice;
 
   @CreateDateColumn({ name: 'created_at' })
   createdAt: Date;

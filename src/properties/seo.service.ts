@@ -16,23 +16,40 @@ export class SeoService {
    */
   generateDefaultTitle(property: Property): string {
     const typeLabel = this.getPropertyTypeLabel(property.type);
+    const city = (property.city ?? '').trim();
     const priceFormatted = this.formatPrice(property.price);
 
-    // Create title: "Apartment for Sale in Paris - €250,000"
-    let title = `${typeLabel} in ${property.city} - ${priceFormatted}`;
+    // The type is the highest-value token, so the city absorbs the truncation
+    // whenever the two cannot both fit inside the budget. Truncating the whole
+    // title instead used to cut a long city in half, losing the location.
+    const maxCityLength = 60 - `${typeLabel} in `.length;
+    const shortCity =
+      city.length > maxCityLength
+        ? city.substring(0, maxCityLength - 3) + '...'
+        : city;
 
-    // Ensure title is within SEO best practices (30-60 characters)
-    if (title.length > 60) {
-      // Truncate and add ellipsis
-      title = title.substring(0, 57) + '...';
+    let title = `${typeLabel} in ${shortCity}`;
+
+    // The price is the next most useful token, added only when it fits.
+    const withPrice = `${title} - ${priceFormatted}`;
+    if (withPrice.length <= 60) {
+      title = withPrice;
     }
 
-    // Ensure minimum length
+    // Pad a title that came out too short. The property title is preferred, then
+    // the floor area, then the room count, each only when it fits: an over-long
+    // listing title used to be discarded whole, so a short city produced a title
+    // below the 30-character minimum.
     if (title.length < 30) {
-      // Add property title if too short
-      const withTitle = `${property.title} - ${title}`;
-      if (withTitle.length <= 60) {
-        title = withTitle;
+      const candidates = [property.title, `${property.size}m²`, `${property.rooms} rooms`];
+      for (const candidate of candidates) {
+        if (!candidate) {
+          continue;
+        }
+        const extra = ` - ${candidate}`;
+        if (title.length + extra.length <= 60) {
+          title += extra;
+        }
       }
     }
 

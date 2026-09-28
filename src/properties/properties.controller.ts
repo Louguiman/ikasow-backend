@@ -24,7 +24,6 @@ import {
 import { PropertiesService } from './properties.service';
 import { CreatePropertyDto, UpdatePropertyDto } from './dto';
 import { Roles } from '../auth/decorators/roles.decorator';
-import { Public } from '../auth/decorators/public.decorator';
 import { UserRole } from '../users/entities/user.entity';
 import { multerConfig } from '../config/multer.config';
 import { FileTypeValidationPipe, SanitizationPipe } from '../common/pipes';
@@ -98,22 +97,6 @@ export class PropertiesController {
     };
 
     return this.propertiesService.findAll(agencyId, page, limit, filters);
-  }
-
-  @Get('public')
-  @Public()
-  @ApiOperation({
-    summary: 'Get public property listings (no authentication required)',
-  })
-  @ApiResponse({
-    status: 200,
-    description: 'Returns published properties with images',
-  })
-  findPublicProperties(
-    @Query('page', new ParseIntPipe({ optional: true })) page?: number,
-    @Query('limit', new ParseIntPipe({ optional: true })) limit?: number,
-  ) {
-    return this.propertiesService.findPublicProperties(page, limit);
   }
 
   @Get(':id')

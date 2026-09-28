@@ -70,9 +70,15 @@ export class SeederService {
 
         for (let i = 1; i <= 20; i++) {
             const operation = operations[i % operations.length];
+            // Price is stored as numeric(10,2), whose maximum is 99,999,999.99. The
+            // previous range (15,000,000 + random(100,000,000)) could reach 115
+            // million, so roughly every other seeded sale property aborted the whole
+            // boot with "A field with precision 10, scale 2 must round to an
+            // absolute value less than 10^8" — and the seeder runs in
+            // onApplicationBootstrap, so the API never came up.
             const price = operation === PropertyOperation.SALE
-                ? 15000000 + (Math.random() * 100000000)
-                : 100000 + (Math.random() * 500000);
+                ? 15_000_000 + (Math.random() * 80_000_000)
+                : 100_000 + (Math.random() * 500_000);
 
             const city = cities[Math.floor(Math.random() * cities.length)];
             const neighborhood = neighborhoods[Math.floor(Math.random() * neighborhoods.length)];

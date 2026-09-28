@@ -18,8 +18,16 @@ export enum PaymentFrequency {
   YEARLY = 'yearly',
 }
 
+export enum TenantStatus {
+  ACTIVE = 'active',
+  PENDING = 'pending',
+  INACTIVE = 'inactive',
+  TERMINATED = 'terminated',
+}
+
 @Entity('tenants')
 @Index(['agencyId', 'propertyId'])
+@Index(['agencyId', 'status'])
 export class Tenant {
   @PrimaryGeneratedColumn('uuid')
   id: string;
@@ -60,25 +68,31 @@ export class Tenant {
   @Column()
   phone: string;
 
-  @Column({ name: 'lease_start_date', type: 'date' })
-  leaseStartDate: Date;
-
-  @Column({ name: 'lease_end_date', type: 'date' })
-  leaseEndDate: Date;
-
-  @Column('decimal', { name: 'monthly_rent', precision: 10, scale: 2 })
-  monthlyRent: number;
-
-  @Column('decimal', { name: 'deposit_amount', precision: 10, scale: 2 })
-  depositAmount: number;
+  // leaseStartDate / leaseEndDate / monthlyRent / depositAmount used to live
+  // here and were removed by 1764366900000-AddLeasesAndDropTenantLeaseColumns.
+  // A tenant has one row, so a renewal overwrote the previous contract; the
+  // terms now live in `leases`, one row per signed contract.
+  // paymentFrequency stays: it describes how the tenant is billed, which the
+  // invoice flow reads without needing a lease lookup.
 
   @Column({
     name: 'payment_frequency',
     type: 'enum',
     enum: PaymentFrequency,
+    enumName: 'payment_frequency_enum',
     default: PaymentFrequency.MONTHLY,
   })
   paymentFrequency: PaymentFrequency;
+
+  // Added by 1764366400000. Tenants.tsx and Leases.tsx filtered on this before
+  // the column existed, so the filter was accepted and then silently ignored.
+  @Column({
+    type: 'enum',
+    enum: TenantStatus,
+    enumName: 'tenant_status_enum',
+    default: TenantStatus.ACTIVE,
+  })
+  status: TenantStatus;
 
   @CreateDateColumn({ name: 'created_at' })
   createdAt: Date;

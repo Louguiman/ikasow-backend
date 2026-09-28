@@ -21,7 +21,7 @@ export class FilesController {
   @UseGuards(FileAccessGuard)
   @ApiOperation({ 
     summary: 'Serve a file with authorization check',
-    description: 'Serves uploaded files with proper authorization. Public users can only access files from published properties. Authenticated users can access files from their agency.',
+    description: 'Serves uploaded property images with proper authorization. Public users can only access images of published properties. Documents are **not** served here — this route is `@Public()`, so no user is ever resolved on it; they are served by `GET /documents/:id/file`, which is authenticated.',
   })
   @ApiParam({
     name: 'filename',

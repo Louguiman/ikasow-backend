@@ -1,4 +1,9 @@
-import { Injectable, NestMiddleware, Logger } from '@nestjs/common';
+import {
+  Injectable,
+  NestMiddleware,
+  Logger,
+  NotFoundException,
+} from '@nestjs/common';
 import { Request, Response, NextFunction } from 'express';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
@@ -20,23 +25,48 @@ export class AgencyContextMiddleware implements NestMiddleware {
 
   constructor(
     @InjectRepository(Agency)
-    private agencyRepository: Repository<Agency>,
-  ) { }
+    private readonly agencyRepository: Repository<Agency>,
+  ) {}
 
+  /**
+   * Resolves the agency from `:agencyIdentifier` and fails closed.
+   *
+   * This used to log "no agency found" and call `next()` anyway, so an unresolvable
+   * identifier produced a 200 with an empty list — indistinguishable from a real
+   * agency with no listings. Worse, handlers that treated the agency as an optional
+   * filter (`if (agencyId) andWhere(...)`) dropped the predicate entirely and served
+   * every agency's rows. An unknown identifier is a 404 now, and the agency predicate
+   * is unconditional in the queries that use it.
+   */
   async use(req: Request, _res: Response, next: NextFunction) {
-    try {
-      const identifier = this.extractIdentifierFromPath(req.originalUrl);
-      const agencyId = await this.resolveAgencyId(identifier);
+    const identifier = this.extractIdentifierFromPath(req.originalUrl);
+    if (!identifier) {
+      // Bound to `public/*`, so this is `/api/public/` with no identifier at all.
+      // There is no route for it, but failing closed costs nothing and keeps the
+      // invariant "every public request has a resolved agency" true.
+      throw new NotFoundException('Agency identifier is required');
+    }
 
-      if (agencyId) {
-        req.agencyId = agencyId;
-        this.logger.debug(`Agency context set: ${agencyId} for identifier: ${identifier}`);
-      } else {
+    try {
+      const agencyId = await this.resolveAgencyId(identifier);
+      if (!agencyId) {
         this.logger.debug(`No agency found for identifier: ${identifier}`);
+        throw new NotFoundException(`Agency '${identifier}' not found`);
       }
+      req.agencyId = agencyId;
+      this.logger.debug(
+        `Agency context set: ${agencyId} for identifier: ${identifier}`,
+      );
     } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+      if (error instanceof NotFoundException) {
+        throw error;
+      }
+      // A database failure must not be reported as "no such agency": that would tell
+      // a caller the portal does not exist when the real problem is our own outage.
+      const errorMessage =
+        error instanceof Error ? error.message : 'Unknown error';
       this.logger.error(`Error resolving agency context: ${errorMessage}`);
+      throw error;
     }
 
     next();
@@ -44,43 +74,36 @@ export class AgencyContextMiddleware implements NestMiddleware {
 
   private extractIdentifierFromPath(url: string): string | undefined {
     // Expected format: /api/public/:identifier/... or /public/:identifier/...
-    const match = url.match(/\/public\/([^\/]+)/);
+    // The identifier may itself be a UUID, so match a single path segment only —
+    // a greedy match used to swallow the rest of the path.
+    const match = url.match(/\/public\/([^/]+)/);
     return match ? match[1] : undefined;
   }
 
-  private async resolveAgencyId(identifier: string | undefined): Promise<string | undefined> {
-    if (!identifier) return undefined;
-
-    try {
-      // 1. Check if identifier is a UUID (Direct ID lookup)
-      const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(identifier);
-      if (isUuid) {
-        const agency = await this.agencyRepository.findOne({ where: { id: identifier, isActive: true }, select: ['id'] });
-        if (agency) return agency.id;
-      }
-
-      // 2. Check as Subdomain/Slug
-      const agencyBySlug = await this.agencyRepository.findOne({
-        where: { subdomain: identifier, isActive: true },
+  private async resolveAgencyId(
+    identifier: string,
+  ): Promise<string | undefined> {
+    // 1. Direct UUID lookup
+    const isUuid =
+      /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(
+        identifier,
+      );
+    if (isUuid) {
+      const agency = await this.agencyRepository.findOne({
+        where: { id: identifier, isActive: true },
         select: ['id'],
       });
-      if (agencyBySlug) return agencyBySlug.id;
-
-      // 3. Fallback: 'demo' if request was for 'demo' specifically (handled above) 
-      // OR if we want to allow a specific fallback logic.
-      // Current requirement: "for the agency it should just be a path".
-      // So if path is provided but invalid, we probably return undefined (404).
-      // However, if the user still wants the 'demo' fallback for dev convenience when accessing root or invalid paths:
-
-      if (identifier === 'demo') {
-        // Explicit 'demo' check already covered by slug lookup
+      if (agency) {
+        return agency.id;
       }
-
-      return undefined;
-
-    } catch (error) {
-      this.logger.error(`Error resolving agency ID: ${error}`);
-      return undefined;
     }
+
+    // 2. Subdomain lookup. There is no fallback: an unknown identifier is a 404, so
+    // that a typo or a retired subdomain can never resolve to somebody else's portal.
+    const agencyBySlug = await this.agencyRepository.findOne({
+      where: { subdomain: identifier.toLowerCase(), isActive: true },
+      select: ['id'],
+    });
+    return agencyBySlug?.id;
   }
 }

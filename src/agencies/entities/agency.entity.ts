@@ -20,7 +20,12 @@ export class Agency {
   @Index()
   email: string;
 
-  @Column({ unique: true, nullable: true })
+  /**
+   * The public portal's tenant key: `public/:agencyIdentifier` resolves an agency by
+   * this value. Required and unique — a NULL or duplicate here is a portal that
+   * cannot be reached, or two agencies answering to one URL.
+   */
+  @Column({ unique: true })
   @Index()
   subdomain: string;
 

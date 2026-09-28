@@ -7,10 +7,12 @@ import { AuthController } from './auth.controller';
 import { AuthService } from './auth.service';
 import { JwtStrategy } from './strategies/jwt.strategy';
 import { User } from '../users/entities/user.entity';
+import { Agency } from '../agencies/entities/agency.entity';
 
 @Module({
   imports: [
-    TypeOrmModule.forFeature([User]),
+    // Agency is needed to validate the agency a public registration claims to join.
+    TypeOrmModule.forFeature([User, Agency]),
     PassportModule.register({ defaultStrategy: 'jwt' }),
     JwtModule.registerAsync({
       imports: [ConfigModule],

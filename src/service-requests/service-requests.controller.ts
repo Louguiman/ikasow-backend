@@ -6,10 +6,10 @@ import {
   Patch,
   Param,
   Query,
-  ParseIntPipe,
 } from '@nestjs/common';
 import { ApiTags, ApiBearerAuth, ApiOperation, ApiResponse } from '@nestjs/swagger';
 import { ServiceRequestsService } from './service-requests.service';
+import { FilterServiceRequestDto } from './dto/filter-service-request.dto';
 import { CreateServiceRequestDto } from './dto/create-service-request.dto';
 import { UpdateServiceRequestDto } from './dto/update-service-request.dto';
 import { Roles } from '../auth/decorators/roles.decorator';
@@ -70,10 +70,9 @@ export class ServiceRequestsController {
   })
   findAll(
     @CurrentAgencyId() agencyId: string,
-    @Query('page', new ParseIntPipe({ optional: true })) page?: number,
-    @Query('limit', new ParseIntPipe({ optional: true })) limit?: number,
+    @Query() filter: FilterServiceRequestDto,
   ) {
-    return this.serviceRequestsService.findAll(agencyId, page || 1, limit || 10);
+    return this.serviceRequestsService.findAll(agencyId, filter);
   }
 
   @Get(':id')

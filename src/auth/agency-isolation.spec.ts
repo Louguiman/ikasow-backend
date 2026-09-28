@@ -1,6 +1,6 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { getRepositoryToken } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { DataSource, Repository } from 'typeorm';
 import { NotFoundException } from '@nestjs/common';
 import { PropertiesService } from '../properties/properties.service';
 import { ClientsService } from '../clients/clients.service';
@@ -9,6 +9,7 @@ import { PropertyImage } from '../properties/entities/property-image.entity';
 import { Client } from '../clients/entities/client.entity';
 import { SlugService } from '../properties/slug.service';
 import { SeoService } from '../properties/seo.service';
+import { ImageProcessingService } from '../properties/image-processing.service';
 import { CacheService } from '../cache/cache.service';
 
 describe('Agency Scope Isolation', () => {
@@ -20,6 +21,7 @@ describe('Agency Scope Isolation', () => {
   const mockPropertyRepository = {
     create: jest.fn(),
     save: jest.fn(),
+    update: jest.fn(),
     findOne: jest.fn(),
     findAndCount: jest.fn(),
     createQueryBuilder: jest.fn(),
@@ -37,10 +39,12 @@ describe('Agency Scope Isolation', () => {
   const mockClientRepository = {
     create: jest.fn(),
     save: jest.fn(),
+    update: jest.fn(),
     findOne: jest.fn(),
     findAndCount: jest.fn(),
     find: jest.fn(),
     remove: jest.fn(),
+    createQueryBuilder: jest.fn(),
   };
 
   const mockSlugService = {
@@ -51,6 +55,18 @@ describe('Agency Scope Isolation', () => {
     validateSeoMetadataOrThrow: jest.fn(),
     generateDefaultTitle: jest.fn(),
     generateDefaultDescription: jest.fn(),
+  };
+
+  const mockTransactionManager = {
+    create: jest.fn(),
+    save: jest.fn(),
+    remove: jest.fn(),
+    delete: jest.fn(),
+    createQueryBuilder: jest.fn(),
+  };
+
+  const mockDataSource = {
+    transaction: jest.fn((callback) => callback(mockTransactionManager)),
   };
 
   const mockCacheService = {
@@ -85,20 +101,19 @@ describe('Agency Scope Isolation', () => {
           useValue: mockSeoService,
         },
         {
+          provide: ImageProcessingService,
+          useValue: {
+            processImage: jest.fn(),
+            deleteImageSizes: jest.fn(),
+          },
+        },
+        {
           provide: CacheService,
           useValue: mockCacheService,
         },
         {
-          provide: 'DataSource',
-          useValue: {
-            transaction: jest.fn((callback) => callback({
-              create: jest.fn(),
-              save: jest.fn(),
-              remove: jest.fn(),
-              delete: jest.fn(),
-              createQueryBuilder: jest.fn(),
-            })),
-          },
+          provide: DataSource,
+          useValue: mockDataSource,
         },
       ],
     }).compile();
@@ -240,7 +255,8 @@ describe('Agency Scope Isolation', () => {
           where: { id: propertyId, agencyId },
           relations: ['images'],
         });
-        expect(mockPropertyRepository.remove).toHaveBeenCalledWith(mockProperty);
+        expect(mockDataSource.transaction).toHaveBeenCalled();
+        expect(mockTransactionManager.remove).toHaveBeenCalledWith(mockProperty);
       });
 
       it('should return 404 when trying to delete property from different agency', async () => {
@@ -265,17 +281,27 @@ describe('Agency Scope Isolation', () => {
           { id: '2', name: 'Client 2', agencyId },
         ];
 
-        mockClientRepository.findAndCount.mockResolvedValue([mockClients, 2]);
+        // findAll moved from findAndCount to a query builder when the status and
+        // search filters were added, so this asserts the same thing the way the
+        // properties test above does.
+        const mockQueryBuilder = {
+          leftJoinAndSelect: jest.fn().mockReturnThis(),
+          where: jest.fn().mockReturnThis(),
+          andWhere: jest.fn().mockReturnThis(),
+          skip: jest.fn().mockReturnThis(),
+          take: jest.fn().mockReturnThis(),
+          orderBy: jest.fn().mockReturnThis(),
+          getManyAndCount: jest.fn().mockResolvedValue([mockClients, 2]),
+        };
 
-        await clientsService.findAll(agencyId, 1, 20);
+        mockClientRepository.createQueryBuilder.mockReturnValue(mockQueryBuilder);
 
-        expect(mockClientRepository.findAndCount).toHaveBeenCalledWith({
-          where: { agencyId },
-          relations: ['user'],
-          skip: 0,
-          take: 20,
-          order: { createdAt: 'DESC' },
-        });
+        await clientsService.findAll(agencyId);
+
+        expect(mockQueryBuilder.where).toHaveBeenCalledWith(
+          'client.agencyId = :agencyId',
+          { agencyId },
+        );
       });
 
       it('should filter clients by agencyId in findOne', async () => {
@@ -366,7 +392,6 @@ describe('Agency Scope Isolation', () => {
 
         expect(mockClientRepository.findOne).toHaveBeenCalledWith({
           where: { id: clientId, agencyId },
-          relations: ['user'],
         });
         expect(mockClientRepository.remove).toHaveBeenCalledWith(mockClient);
       });
@@ -380,35 +405,6 @@ describe('Agency Scope Isolation', () => {
         await expect(
           clientsService.remove(clientId, agencyId),
         ).rejects.toThrow(NotFoundException);
-      });
-    });
-
-    describe('matchProperties enforces agency scope', () => {
-      it('should only match clients within same agency', async () => {
-        const agencyId = 'agency-1';
-        const mockClients = [
-          {
-            id: '1',
-            agencyId,
-            preferredPropertyType: ['apartment'],
-            preferredLocation: ['New York'],
-            budgetMin: 1000,
-            budgetMax: 2000,
-          },
-        ];
-
-        mockClientRepository.find.mockResolvedValue(mockClients);
-
-        await clientsService.matchProperties(agencyId, {
-          type: 'apartment',
-          city: 'New York',
-          price: 1500,
-        });
-
-        expect(mockClientRepository.find).toHaveBeenCalledWith({
-          where: { agencyId },
-          relations: ['user'],
-        });
       });
     });
   });

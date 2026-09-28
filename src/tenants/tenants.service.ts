@@ -1,25 +1,32 @@
 import {
   Injectable,
   NotFoundException,
-  BadRequestException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { Tenant } from './entities/tenant.entity';
+import { UserRole } from '../users/entities/user.entity';
 import { Payment } from '../payments/entities/payment.entity';
+import { PaymentsService } from '../payments/payments.service';
 import { CreateTenantDto } from './dto/create-tenant.dto';
 import { UpdateTenantDto } from './dto/update-tenant.dto';
 import { ErrorHandler } from '../common/utils/error-handler';
+import { FilterTenantDto } from './dto/filter-tenant.dto';
 import { PaginatedResponse } from '../common/dto/paginated-response.dto';
 import { BaseService } from '../common/services';
+
+/** Who is asking, for the per-tenant routes that a `TENANT` may also reach. */
+export interface Caller {
+  userId: string;
+  role: UserRole;
+}
 
 @Injectable()
 export class TenantsService extends BaseService<Tenant> {
   constructor(
     @InjectRepository(Tenant)
     tenantRepository: Repository<Tenant>,
-    @InjectRepository(Payment)
-    private readonly paymentRepository: Repository<Payment>,
+    private readonly paymentsService: PaymentsService,
   ) {
     super(tenantRepository);
   }
@@ -28,18 +35,11 @@ export class TenantsService extends BaseService<Tenant> {
     return 'Tenant';
   }
 
+  // The lease-date check that used to live here is gone with the columns: the
+  // terms are in `leases` now, and `CreateLeaseDto`/`LeasesService.activate`
+  // own the ordering rule.
   async create(createTenantDto: CreateTenantDto): Promise<Tenant> {
     try {
-      // Validate lease dates
-      const startDate = new Date(createTenantDto.leaseStartDate);
-      const endDate = new Date(createTenantDto.leaseEndDate);
-
-      if (endDate <= startDate) {
-        throw new BadRequestException(
-          'Lease end date must be after lease start date',
-        );
-      }
-
       return await this.baseCreate(createTenantDto);
     } catch (error) {
       ErrorHandler.handle(error, 'TenantsService.create');
@@ -49,21 +49,46 @@ export class TenantsService extends BaseService<Tenant> {
   // Agency-scoped findAll (custom signature)
   async findAll(
     agencyId: string,
-    page: number = 1,
-    limit: number = 20,
+    filter: FilterTenantDto = {},
   ): Promise<PaginatedResponse<Tenant>> {
     try {
+      const { page = 1, limit = 20, status, search, propertyId } = filter;
+
       // Enforce maximum limit
       const effectiveLimit = Math.min(limit, 100);
       const skip = (page - 1) * effectiveLimit;
 
-      const [tenants, total] = await this.repository.findAndCount({
-        where: { agencyId },
-        relations: ['property', 'user'],
-        skip,
-        take: effectiveLimit,
-        order: { createdAt: 'DESC' },
-      });
+      const query = this.repository
+        .createQueryBuilder('tenant')
+        .leftJoinAndSelect('tenant.property', 'property')
+        .leftJoinAndSelect('tenant.user', 'user')
+        .where('tenant.agencyId = :agencyId', { agencyId });
+
+      if (status) {
+        query.andWhere('tenant.status = :status', { status });
+      }
+
+      if (propertyId) {
+        query.andWhere('tenant.propertyId = :propertyId', { propertyId });
+      }
+
+      if (search) {
+        // Wildcards are escaped here so a search for "100%" is a literal search
+        // rather than a match-everything one.
+        const term = search.trim().replace(/[%_]/g, (c) => `\\${c}`);
+        query.andWhere(
+          `(tenant.firstName ILIKE :term OR tenant.lastName ILIKE :term
+            OR tenant.email ILIKE :term
+            OR (tenant.firstName || ' ' || tenant.lastName) ILIKE :term)`,
+          { term: `%${term}%` },
+        );
+      }
+
+      const [tenants, total] = await query
+        .skip(skip)
+        .take(effectiveLimit)
+        .orderBy('tenant.createdAt', 'DESC')
+        .getManyAndCount();
 
       return new PaginatedResponse(tenants, total, page, effectiveLimit);
     } catch (error) {
@@ -89,7 +114,7 @@ export class TenantsService extends BaseService<Tenant> {
     }
   }
 
-  // Agency-scoped update with lease date validation (custom signature)
+  // Agency-scoped update (custom signature)
   async update(
     id: string,
     agencyId: string,
@@ -97,18 +122,6 @@ export class TenantsService extends BaseService<Tenant> {
   ): Promise<Tenant> {
     try {
       const tenant = await this.findOne(id, agencyId);
-
-      // Validate lease dates if both are provided
-      if (updateTenantDto.leaseStartDate && updateTenantDto.leaseEndDate) {
-        const startDate = new Date(updateTenantDto.leaseStartDate);
-        const endDate = new Date(updateTenantDto.leaseEndDate);
-
-        if (endDate <= startDate) {
-          throw new BadRequestException(
-            'Lease end date must be after lease start date',
-          );
-        }
-      }
 
       Object.assign(tenant, updateTenantDto);
       return await this.repository.save(tenant);
@@ -127,69 +140,76 @@ export class TenantsService extends BaseService<Tenant> {
     }
   }
 
-  calculateNextPaymentDueDate(tenant: Tenant): Date {
-    const startDate = new Date(tenant.leaseStartDate);
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-
-    const nextDueDate = new Date(startDate);
-
-    // Calculate the next due date based on payment frequency
-    this.advanceDateByFrequency(nextDueDate, today, tenant.paymentFrequency);
-
-    return nextDueDate;
-  }
-
-  private advanceDateByFrequency(
-    date: Date,
-    targetDate: Date,
-    frequency: string,
-  ): void {
-    switch (frequency) {
-      case 'monthly':
-        this.advanceMonthly(date, targetDate);
-        break;
-      case 'quarterly':
-        this.advanceQuarterly(date, targetDate);
-        break;
-      case 'yearly':
-        this.advanceYearly(date, targetDate);
-        break;
-    }
-  }
-
-  private advanceMonthly(date: Date, targetDate: Date): void {
-    while (date <= targetDate) {
-      date.setMonth(date.getMonth() + 1);
-    }
-  }
-
-  private advanceQuarterly(date: Date, targetDate: Date): void {
-    while (date <= targetDate) {
-      date.setMonth(date.getMonth() + 3);
-    }
-  }
-
-  private advanceYearly(date: Date, targetDate: Date): void {
-    while (date <= targetDate) {
-      date.setFullYear(date.getFullYear() + 1);
-    }
-  }
-
+  /**
+   * Delegates to `PaymentsService` rather than querying the payment repository
+   * here. This used to `find({ where: { tenantId } })` with no agency predicate:
+   * the tenant was checked first, which is sound for a consistent database, but
+   * it relied on a relation instead of the payment's own `agency_id`, and it
+   * returned a bare array while every other list endpoint returns the
+   * `PaginatedResponse` envelope the frontend pager needs.
+   */
+  /**
+   * `caller` is required rather than optional, so a caller that forgets to pass
+   * it fails the `if` below into a 403 instead of quietly skipping the check.
+   *
+   * The role list on the route includes `TENANT`, and agency scope alone is not
+   * enough for a tenant: every tenant of an agency shares one `agencyId`, so
+   * `GET /tenants/<another tenant id>/payments` used to return another
+   * household's payments to any tenant in the same agency. Staff roles are
+   * trusted to read any tenant of the agency; a tenant is only ever themselves.
+   */
   async getPaymentHistory(
     tenantId: string,
     agencyId: string,
-  ): Promise<Payment[]> {
+    page = 1,
+    limit = 20,
+    caller: Caller,
+  ): Promise<PaginatedResponse<Payment>> {
     try {
-      // Verify tenant exists and belongs to agency
-      await this.findOne(tenantId, agencyId);
-
-      return await this.paymentRepository.find({
-        where: { tenantId },
-        order: { paymentDate: 'DESC' },
-      });
+      await this.assertTenantSelfOrStaff(tenantId, agencyId, caller);
+      return await this.paymentsService.findByTenant(
+        tenantId,
+        agencyId,
+        page,
+        limit,
+      );
     } catch (error) {
       ErrorHandler.handle(error, 'TenantsService.getPaymentHistory');
+    }
+  }
+
+  /**
+   * Every per-tenant route on this controller goes through here, so a new
+   * `:id/...` route added later is in the same family.
+   *
+   * The role list on those routes includes `TENANT`, and agency scope alone is
+   * not enough for a tenant: every tenant of an agency shares one `agencyId`, so
+   * `GET /tenants/<another tenant id>/payments` used to hand one household's
+   * payments to any tenant in the same agency. Staff may read any tenant of the
+   * agency; a tenant is only ever themselves.
+   *
+   * 404 rather than 403, because a tenant has no business confirming that some
+   * other tenant record exists in their agency.
+   *
+   * `caller` is required, not optional: an optional one would let a route that
+   * forgets to pass it skip the check silently, which is the exact shape of bug
+   * this is fixing. The compiler is the thing that makes that safe.
+   */
+  async assertTenantSelfOrStaff(
+    tenantId: string,
+    agencyId: string,
+    caller: Caller,
+  ): Promise<void> {
+    if (caller.role !== UserRole.TENANT) {
+      return;
+    }
+
+    const tenant = await this.findOne(tenantId, agencyId);
+
+    if (tenant.userId !== caller.userId) {
+      throw new NotFoundException(
+        `Tenant with ID ${tenantId} not found in this agency`,
+      );
     }
   }
 }

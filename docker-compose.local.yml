@@ -1,0 +1,35 @@
+# Local development override.
+#
+# Why this exists: the host may already have 5432/6379/3000 bound by other projects
+# (the repo's docker-compose.yml claims them). This file moves the published ports
+# out of the way WITHOUT changing the in-network addresses, so containers and the
+# NestJS app still talk to `postgres:5432` / `redis:6379` as usual.
+#
+# Usage:
+#   docker compose -f docker-compose.yml -f docker-compose.local.yml up -d
+#
+# Then from the host:
+#   postgres  ->  localhost:55432
+#   redis     ->  localhost:56379
+#
+# For tests/app config, export the matching values:
+#   DATABASE_PORT=55432 REDIS_PORT=56379
+# The two DB-backed jest specs use DB_PORT (not DATABASE_PORT) — see AGENTS.md.
+
+services:
+  postgres:
+    # !override REPLACES the base file's ports list. Without it compose *appends*,
+    # so the container would try to bind both 5432 and 55432 on the host.
+    ports: !override
+      - '55432:5432'
+
+  redis:
+    ports: !override
+      - '56379:6379'
+
+  backend:
+    ports: !override
+      - '53000:3000'
+    volumes:
+      - ./uploads:/app/uploads
+      - ./logs:/app/logs

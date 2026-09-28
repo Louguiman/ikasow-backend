@@ -4,6 +4,7 @@ import { FilesController } from './controllers/files.controller';
 import { FileAccessGuard } from './guards/file-access.guard';
 import { PropertyImage } from '../properties/entities/property-image.entity';
 import { Property } from '../properties/entities/property.entity';
+import { Document } from '../documents/entities/document.entity';
 import { SanitizationPipe } from './pipes/sanitization.pipe';
 import { FileTypeValidationPipe } from './pipes/file-type-validation.pipe';
 import { DateFormattingInterceptor } from './interceptors/date-formatting.interceptor';
@@ -27,7 +28,10 @@ import { LoggingInterceptor } from './interceptors/logging.interceptor';
  */
 @Global()
 @Module({
-  imports: [TypeOrmModule.forFeature([PropertyImage, Property])],
+  // `Document` is registered so `FileAccessGuard` can resolve a document by its
+  // stored filename; without it the guard cannot inject the repository and the
+  // whole module fails to boot.
+  imports: [TypeOrmModule.forFeature([PropertyImage, Property, Document])],
   controllers: [FilesController],
   providers: [
     FileAccessGuard,

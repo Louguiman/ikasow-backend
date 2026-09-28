@@ -7,7 +7,7 @@ import { Repository } from 'typeorm';
 import { Client } from './entities/client.entity';
 import { CreateClientDto } from './dto/create-client.dto';
 import { UpdateClientDto } from './dto/update-client.dto';
-import { MatchPropertiesDto } from './dto/match-properties.dto';
+import { FilterClientDto } from './dto/filter-client.dto';
 import { ErrorHandler } from '../common/utils/error-handler';
 import { PaginatedResponse } from '../common/dto/paginated-response.dto';
 import { BaseService } from '../common/services/base.service';
@@ -47,13 +47,39 @@ export class ClientsService extends BaseService<Client> {
 
   async findAll(
     agencyId: string,
-    page: number = 1,
-    limit: number = 20,
-  ): Promise<PaginatedResponse<Client> | Client[]> {
-    return this.baseFindAll(agencyId, page, limit, {
-      relations: ['user'],
-      order: { createdAt: 'DESC' } as any,
-    });
+    filter: FilterClientDto = {},
+  ): Promise<PaginatedResponse<Client>> {
+    const { page = 1, limit = 20, status, search } = filter;
+
+    const query = this.repository
+      .createQueryBuilder('client')
+      .leftJoinAndSelect('client.user', 'user')
+      .where('client.agencyId = :agencyId', { agencyId });
+
+    if (status) {
+      query.andWhere('client.status = :status', { status });
+    }
+
+    if (search) {
+      // ILIKE with the wildcards added here, not by the caller, so a search for
+      // "100%" is a literal search rather than a match-everything one.
+      const term = search.trim().replace(/[%_]/g, (c) => `\\${c}`);
+      query.andWhere(
+        `(client.firstName ILIKE :term OR client.lastName ILIKE :term
+          OR client.email ILIKE :term
+          OR (client.firstName || ' ' || client.lastName) ILIKE :term)`,
+        { term: `%${term}%` },
+      );
+    }
+
+    const effectiveLimit = Math.min(limit, 100);
+    const [clients, total] = await query
+      .skip((page - 1) * effectiveLimit)
+      .take(effectiveLimit)
+      .orderBy('client.createdAt', 'DESC')
+      .getManyAndCount();
+
+    return new PaginatedResponse(clients, total, page, effectiveLimit);
   }
 
   async findOne(id: string, agencyId: string): Promise<Client> {
@@ -98,96 +124,5 @@ export class ClientsService extends BaseService<Client> {
 
   async remove(id: string, agencyId: string): Promise<void> {
     return this.baseRemove(id, agencyId);
-  }
-
-  async matchProperties(
-    agencyId: string,
-    criteria: MatchPropertiesDto,
-  ): Promise<Array<Client & { matchScore: number }>> {
-    try {
-      // Get all clients for the agency
-      const clients = await this.repository.find({
-        where: { agencyId },
-        relations: ['user'],
-      });
-
-      // Calculate match score for each client
-      const clientsWithScores = clients
-        .map((client) => this.calculateClientMatchScore(client, criteria))
-        .filter((client) => client.matchScore > 0) // Only return clients with at least one match
-        .sort((a, b) => b.matchScore - a.matchScore); // Sort by match score descending
-
-      return clientsWithScores;
-    } catch (error) {
-      ErrorHandler.handle(error, 'ClientsService.matchProperties');
-    }
-  }
-
-  private calculateClientMatchScore(
-    client: Client,
-    criteria: MatchPropertiesDto,
-  ): Client & { matchScore: number } {
-    let matchScore = 0;
-    let totalCriteria = 0;
-
-    // Check property type match
-    if (this.hasPropertyTypeMatch(client, criteria.type)) {
-      totalCriteria++;
-      matchScore++;
-    } else if (criteria.type && client.preferredPropertyType?.length > 0) {
-      totalCriteria++;
-    }
-
-    // Check location match
-    if (this.hasLocationMatch(client, criteria.city)) {
-      totalCriteria++;
-      matchScore++;
-    } else if (criteria.city && client.preferredLocation?.length > 0) {
-      totalCriteria++;
-    }
-
-    // Check budget match
-    if (this.hasBudgetMatch(client, criteria.price)) {
-      totalCriteria++;
-      matchScore++;
-    } else if (criteria.price !== undefined) {
-      totalCriteria++;
-    }
-
-    // Calculate percentage match (0-100)
-    const matchPercentage =
-      totalCriteria > 0 ? (matchScore / totalCriteria) * 100 : 0;
-
-    return {
-      ...client,
-      matchScore: Math.round(matchPercentage),
-    };
-  }
-
-  private hasPropertyTypeMatch(client: Client, propertyType?: string): boolean {
-    if (!propertyType || !client.preferredPropertyType?.length) {
-      return false;
-    }
-    return client.preferredPropertyType.includes(propertyType);
-  }
-
-  private hasLocationMatch(client: Client, city?: string): boolean {
-    if (!city || !client.preferredLocation?.length) {
-      return false;
-    }
-    const normalizedCity = city.toLowerCase();
-    return client.preferredLocation.some((location) =>
-      location.toLowerCase().includes(normalizedCity),
-    );
-  }
-
-  private hasBudgetMatch(client: Client, price?: number): boolean {
-    if (price === undefined) {
-      return false;
-    }
-    const priceInRange =
-      (client.budgetMin === null || price >= client.budgetMin) &&
-      (client.budgetMax === null || price <= client.budgetMax);
-    return priceInRange;
   }
 }

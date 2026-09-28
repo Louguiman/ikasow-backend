@@ -50,6 +50,7 @@ export class User {
   @Column({
     type: 'enum',
     enum: UserRole,
+    enumName: 'user_role_enum',
     default: UserRole.CLIENT,
   })
   @Index()

@@ -1,6 +1,7 @@
 import { ExecutionContext, ForbiddenException } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
 import { AgencyScopeGuard, SKIP_AGENCY_SCOPE_KEY } from './agency-scope.guard';
+import { IS_PUBLIC_KEY } from '../decorators/public.decorator';
 import { UserRole } from '../../users/entities/user.entity';
 
 describe('AgencyScopeGuard', () => {
@@ -12,12 +13,31 @@ describe('AgencyScopeGuard', () => {
     guard = new AgencyScopeGuard(reflector);
   });
 
+  // The guard asks for two distinct metadata keys (IS_PUBLIC_KEY, then
+  // SKIP_AGENCY_SCOPE_KEY). A single blanket mockReturnValue makes the first,
+  // public check answer for the second key too, which short-circuits the guard
+  // before the skip lookup ever happens.
+  const stubReflector = (metadata: {
+    isPublic?: boolean;
+    skipAgencyScope?: boolean;
+  }): void => {
+    jest.spyOn(reflector, 'getAllAndOverride').mockImplementation((key: any) => {
+      if (key === IS_PUBLIC_KEY) {
+        return metadata.isPublic === true;
+      }
+      if (key === SKIP_AGENCY_SCOPE_KEY) {
+        return metadata.skipAgencyScope === true;
+      }
+      return undefined;
+    });
+  };
+
   const createMockExecutionContext = (user: any, skipAgencyScope = false): ExecutionContext => {
     const mockRequest = {
       user,
     };
 
-    jest.spyOn(reflector, 'getAllAndOverride').mockReturnValue(skipAgencyScope);
+    stubReflector({ skipAgencyScope });
 
     return {
       switchToHttp: () => ({
@@ -44,7 +64,7 @@ describe('AgencyScopeGuard', () => {
         getClass: () => mockClass,
       } as any;
 
-      jest.spyOn(reflector, 'getAllAndOverride').mockReturnValue(true);
+      stubReflector({ skipAgencyScope: true });
 
       const result = guard.canActivate(context);
 
@@ -96,7 +116,7 @@ describe('AgencyScopeGuard', () => {
         getClass: jest.fn(),
       } as any;
 
-      jest.spyOn(reflector, 'getAllAndOverride').mockReturnValue(false);
+      stubReflector({});
 
       const result = guard.canActivate(context);
 
@@ -117,7 +137,7 @@ describe('AgencyScopeGuard', () => {
         getClass: jest.fn(),
       } as any;
 
-      jest.spyOn(reflector, 'getAllAndOverride').mockReturnValue(false);
+      stubReflector({});
 
       const result = guard.canActivate(context);
 
@@ -159,7 +179,7 @@ describe('AgencyScopeGuard', () => {
         getClass: jest.fn(),
       } as any;
 
-      jest.spyOn(reflector, 'getAllAndOverride').mockReturnValue(false);
+      stubReflector({});
 
       guard.canActivate(context);
 
@@ -181,7 +201,7 @@ describe('AgencyScopeGuard', () => {
         getClass: jest.fn(),
       } as any;
 
-      jest.spyOn(reflector, 'getAllAndOverride').mockReturnValue(false);
+      stubReflector({});
 
       const result = guard.canActivate(context);
 

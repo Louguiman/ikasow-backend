@@ -1,4 +1,5 @@
 import {
+  Body,
   Controller,
   Get,
   Post,
@@ -7,6 +8,7 @@ import {
 } from '@nestjs/common';
 import { ApiTags, ApiBearerAuth, ApiOperation, ApiResponse } from '@nestjs/swagger';
 import { LeadsService } from './leads.service';
+import { CreateLeadDto } from './dto/create-lead.dto';
 import { PaginationQueryDto } from './dto/pagination-query.dto';
 import { Roles } from '../auth/decorators/roles.decorator';
 import { UserRole } from '../users/entities/user.entity';
@@ -17,6 +19,25 @@ import { CurrentAgencyId } from '../common/decorators/current-agency-id.decorato
 @Controller('leads')
 export class LeadsController {
   constructor(private readonly leadsService: LeadsService) { }
+
+  @Post()
+  @Roles(UserRole.ADMIN, UserRole.AGENT)
+  @ApiOperation({
+    summary: 'Record a lead for a property',
+    description:
+      'LeadsService.create existed but no route called it, so nothing could ' +
+      'ever create a lead and the admin contact form had to fake it.',
+  })
+  @ApiResponse({ status: 201, description: 'Lead created' })
+  @ApiResponse({ status: 400, description: 'Validation failed' })
+  @ApiResponse({ status: 401, description: 'Unauthorized' })
+  @ApiResponse({ status: 403, description: 'Forbidden - Insufficient permissions' })
+  create(
+    @Body() createLeadDto: CreateLeadDto,
+    @CurrentAgencyId() agencyId: string,
+  ) {
+    return this.leadsService.create(createLeadDto, agencyId);
+  }
 
   @Get()
   @Roles(UserRole.ADMIN, UserRole.AGENT)

@@ -361,18 +361,4 @@ export class PropertiesService extends BaseService<Property> {
 
     return saved;
   }
-
-  async findPublicProperties(page: number = 1, limit: number = 20): Promise<PaginatedResponse<Property>> {
-    const effectiveLimit = Math.min(limit, 100);
-    const [properties, total] = await this.repository.findAndCount({
-      where: { status: PropertyStatus.PUBLISHED },
-      relations: ['images'],
-      skip: (page - 1) * effectiveLimit,
-      take: effectiveLimit,
-      order: { createdAt: 'DESC' },
-    });
-
-    const publicProperties = properties.map(({ agencyId: _, ...rest }) => rest);
-    return new PaginatedResponse(publicProperties as Property[], total, page, effectiveLimit);
-  }
 }

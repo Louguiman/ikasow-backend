@@ -37,6 +37,10 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
     }
 
     return {
+      // `sub` is the standard claim name and is what Passport puts on
+      // `req.user`; controllers read `req.user.sub`. `id` is kept because the
+      // existing guards, decorators and audit logs read `req.user.id`.
+      sub: user.id,
       id: user.id,
       email: user.email,
       role: user.role,

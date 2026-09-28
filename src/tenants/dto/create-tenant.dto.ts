@@ -3,27 +3,25 @@ import {
   IsEmail,
   IsUUID,
   IsOptional,
-  IsDateString,
-  IsNumber,
   IsEnum,
-  Min,
-  Max,
   IsNotEmpty,
   MinLength,
   MaxLength,
 } from 'class-validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { PaymentFrequency } from '../entities/tenant.entity';
-import { IsDateBefore } from '../../common/validators';
+import { PaymentFrequency, TenantStatus } from '../entities/tenant.entity';
 
 export class CreateTenantDto {
-  @ApiProperty({
-    description: 'Agency ID that manages the tenant',
-    example: '123e4567-e89b-12d3-a456-426614174000',
+  @ApiPropertyOptional({
+    description:
+      'Agency that manages the tenant. Ignored when present: the controller always ' +
+      'overwrites it with the caller\'s agency from the request context. Required here ' +
+      'before, which meant a tenant could not be created from the UI at all unless the ' +
+      'caller already knew the agency UUID.',
   })
-  @IsNotEmpty()
+  @IsOptional()
   @IsUUID()
-  agencyId: string;
+  agencyId?: string;
 
   @ApiPropertyOptional({
     description: 'User ID if tenant has a user account',
@@ -85,48 +83,13 @@ export class CreateTenantDto {
   @MaxLength(20)
   phone: string;
 
-  @ApiProperty({
-    description: 'Lease start date (ISO 8601 format)',
-    example: '2024-01-01T00:00:00.000Z',
-  })
-  @IsNotEmpty()
-  @IsDateString()
-  @IsDateBefore('leaseEndDate', {
-    message: 'Lease start date must be before lease end date',
-  })
-  leaseStartDate: string;
-
-  @ApiProperty({
-    description: 'Lease end date (ISO 8601 format)',
-    example: '2024-12-31T23:59:59.999Z',
-  })
-  @IsNotEmpty()
-  @IsDateString()
-  leaseEndDate: string;
-
-  @ApiProperty({
-    description: 'Monthly rent amount',
-    example: 50000,
-    minimum: 0,
-    maximum: 100000000,
-  })
-  @IsNotEmpty()
-  @IsNumber()
-  @Min(0)
-  @Max(100000000)
-  monthlyRent: number;
-
-  @ApiProperty({
-    description: 'Security deposit amount',
-    example: 100000,
-    minimum: 0,
-    maximum: 100000000,
-  })
-  @IsNotEmpty()
-  @IsNumber()
-  @Min(0)
-  @Max(100000000)
-  depositAmount: number;
+  // leaseStartDate / leaseEndDate / monthlyRent / depositAmount are no longer
+  // accepted here. They moved to `leases` (1764366900000); a tenant row cannot
+  // hold a renewal, and the `Leases` page used to be a tenant list precisely
+  // because of it. `whitelist` + `forbidNonWhitelisted` now answer 400 for a
+  // body that still sends them, rather than silently dropping them.
+  // paymentFrequency stays on the tenant: it says how the tenant is billed,
+  // which the invoice flow reads directly.
 
   @ApiProperty({
     description: 'Payment frequency',
@@ -136,4 +99,14 @@ export class CreateTenantDto {
   @IsNotEmpty()
   @IsEnum(PaymentFrequency)
   paymentFrequency: PaymentFrequency;
+
+  @ApiPropertyOptional({
+    description: 'Lifecycle status of the tenancy',
+    enum: TenantStatus,
+    example: TenantStatus.ACTIVE,
+    default: TenantStatus.ACTIVE,
+  })
+  @IsOptional()
+  @IsEnum(TenantStatus)
+  status?: TenantStatus;
 }

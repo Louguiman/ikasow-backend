@@ -64,6 +64,7 @@ export class Invoice {
   @Column({
     type: 'enum',
     enum: InvoiceStatus,
+    enumName: 'invoice_status_enum',
     default: InvoiceStatus.DRAFT,
   })
   @Index()

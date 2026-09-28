@@ -61,6 +61,7 @@ export class Activity {
   @Column({
     type: 'enum',
     enum: ActivityType,
+    enumName: 'activity_type_enum',
   })
   type: ActivityType;
 

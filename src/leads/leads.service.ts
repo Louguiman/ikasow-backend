@@ -28,7 +28,11 @@ export class LeadsService extends BaseService<Lead> {
     return this.baseCreate({
       ...createLeadDto,
       agencyId,
-      source: 'public_portal',
+      // The only caller is the admin property page, so 'public_portal' (the
+      // column default) was simply wrong. agencyId comes from the request
+      // context, never from the body, so a lead cannot be filed under another
+      // tenant's portfolio.
+      source: 'admin_contact',
     });
   }
 

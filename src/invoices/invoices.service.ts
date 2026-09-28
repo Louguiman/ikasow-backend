@@ -8,6 +8,7 @@ import { Repository, DataSource } from 'typeorm';
 import { Invoice, InvoiceStatus } from './entities/invoice.entity';
 import { InvoiceItem } from './entities/invoice-item.entity';
 import { CreateInvoiceDto } from './dto/create-invoice.dto';
+import { FilterInvoiceDto } from './dto/filter-invoice.dto';
 import { UpdateInvoiceDto } from './dto/update-invoice.dto';
 import { ErrorHandler } from '../common/utils/error-handler';
 import { PaginatedResponse } from '../common/dto/paginated-response.dto';
@@ -29,7 +30,10 @@ export class InvoicesService extends BaseService<Invoice> {
     return 'Invoice';
   }
 
-  async create(createInvoiceDto: CreateInvoiceDto): Promise<Invoice> {
+  async create(
+    createInvoiceDto: CreateInvoiceDto,
+    agencyId: string,
+  ): Promise<Invoice> {
     try {
       // Validate that at least one of tenantId or clientId is provided
       if (!createInvoiceDto.tenantId && !createInvoiceDto.clientId) {
@@ -45,12 +49,20 @@ export class InvoicesService extends BaseService<Invoice> {
 
         // Calculate totals from items
         const { subtotal, items } = this.calculateTotals(createInvoiceDto.items);
+        // `tax` is a *rate*, not an amount: CreateInvoiceDto caps it at 100 and
+        // the form labels it "Taxe (%)", so the rate is what gets stored and the
+        // amount is derived. Adding the rate flat meant an invoice of 500 000
+        // with tax 10 totalled 500 010 instead of 550 000.
         const tax = createInvoiceDto.tax || 0;
-        const total = subtotal + tax;
+        const total = subtotal + this.calculateTaxAmount(subtotal, tax);
 
         // Create invoice
         const invoice = manager.create(Invoice, {
           invoiceNumber,
+          // invoices.agency_id is NOT NULL with no default, and create() used to
+          // leave it unset, so every POST /invoices failed with
+          // "null value in column "agency_id" ... violates not-null constraint".
+          agencyId,
           tenantId: createInvoiceDto.tenantId,
           clientId: createInvoiceDto.clientId,
           issueDate: createInvoiceDto.issueDate,
@@ -72,12 +84,19 @@ export class InvoicesService extends BaseService<Invoice> {
 
   async findAll(
     agencyId: string,
-    page: number = 1,
-    limit: number = 20,
-    tenantId?: string,
-    clientId?: string,
+    filter: FilterInvoiceDto = {},
   ): Promise<PaginatedResponse<Invoice>> {
     try {
+      const {
+        page = 1,
+        limit = 20,
+        status,
+        tenantId,
+        clientId,
+        fromDate,
+        toDate,
+      } = filter;
+
       // Enforce maximum limit
       const effectiveLimit = Math.min(limit, 100);
       const skip = (page - 1) * effectiveLimit;
@@ -86,8 +105,17 @@ export class InvoicesService extends BaseService<Invoice> {
         .createQueryBuilder('invoice')
         .leftJoinAndSelect('invoice.items', 'items')
         .leftJoinAndSelect('invoice.tenant', 'tenant')
-        .leftJoinAndSelect('invoice.client', 'client')
-        .where('1=1');
+        .leftJoinAndSelect('invoice.client', 'client');
+
+      // Scope on the invoice's own agency_id. It used to go through
+      // `tenant.agencyId OR client.agencyId`, which both hid invoices whose
+      // counterparty belonged to another agency and would have shown an invoice
+      // with neither loaded. agency_id is NOT NULL, so the column is the truth.
+      queryBuilder.andWhere('invoice.agencyId = :agencyId', { agencyId });
+
+      if (status) {
+        queryBuilder.andWhere('invoice.status = :status', { status });
+      }
 
       // Filter by tenant if provided
       if (tenantId) {
@@ -99,20 +127,32 @@ export class InvoicesService extends BaseService<Invoice> {
         queryBuilder.andWhere('invoice.clientId = :clientId', { clientId });
       }
 
-      // Filter by agency through tenant or client
-      queryBuilder.andWhere(
-        '(tenant.agencyId = :agencyId OR client.agencyId = :agencyId)',
-        { agencyId },
-      );
+      // Issue date is a `date` column, so the bounds are compared as dates. The
+      // end of `toDate` is inclusive, hence the exclusive next-day upper bound.
+      if (fromDate) {
+        queryBuilder.andWhere('invoice.issueDate >= :fromDate', { fromDate });
+      }
 
-      queryBuilder
+      if (toDate) {
+        const endExclusive = new Date(toDate);
+        endExclusive.setDate(endExclusive.getDate() + 1);
+        queryBuilder.andWhere('invoice.issueDate < :endExclusive', {
+          endExclusive: endExclusive.toISOString().slice(0, 10),
+        });
+      }
+
+      const [invoices, total] = await queryBuilder
         .skip(skip)
         .take(effectiveLimit)
-        .orderBy('invoice.createdAt', 'DESC');
+        .orderBy('invoice.createdAt', 'DESC')
+        .getManyAndCount();
 
-      const [invoices, total] = await queryBuilder.getManyAndCount();
-
-      return new PaginatedResponse(invoices, total, page, effectiveLimit);
+      return new PaginatedResponse(
+        invoices,
+        total,
+        page,
+        effectiveLimit,
+      );
     } catch (error) {
       ErrorHandler.handle(error, 'InvoicesService.findAll');
     }
@@ -159,8 +199,11 @@ export class InvoicesService extends BaseService<Invoice> {
 
           // Calculate new totals
           const { subtotal, items } = this.calculateTotals(updateInvoiceDto.items!);
-          const tax = updateInvoiceDto.tax !== undefined ? updateInvoiceDto.tax : invoice.tax;
-          const total = subtotal + tax;
+          // `tax` is stored as the rate, so the stored value is the one to
+          // re-apply when the caller does not send a new rate.
+          const tax =
+            updateInvoiceDto.tax !== undefined ? updateInvoiceDto.tax : invoice.tax;
+          const total = subtotal + this.calculateTaxAmount(subtotal, tax);
 
           // Update invoice with new values
           Object.assign(invoice, {
@@ -252,6 +295,19 @@ export class InvoicesService extends BaseService<Invoice> {
     }
 
     return `INV-${year}${month}-${String(sequence).padStart(4, '0')}`;
+  }
+
+  /**
+   * Turns a tax *rate* into the amount to add to a subtotal.
+   *
+   * Rounding to two decimals matches the `numeric(10,2)` columns; without it
+   * 18% of 333.33 lands as 59.9994 in the database.
+   */
+  private calculateTaxAmount(subtotal: number, rate?: number): number {
+    if (!rate) {
+      return 0;
+    }
+    return Math.round(subtotal * (rate / 100) * 100) / 100;
   }
 
   private calculateTotals(itemDtos: any[]): {
