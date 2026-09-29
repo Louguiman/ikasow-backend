@@ -58,7 +58,7 @@ export class PropertiesService extends BaseService<Property> {
   }
 
   async findAll(
-    agencyId?: string,
+    agencyId: string,
     page: number = 1,
     limit: number = 20,
     filters?: {
@@ -93,7 +93,7 @@ export class PropertiesService extends BaseService<Property> {
 
   private applyPropertyFilters(
     queryBuilder: any,
-    agencyId?: string,
+    agencyId: string,
     filters?: {
       city?: string;
       type?: string;
@@ -103,10 +103,11 @@ export class PropertiesService extends BaseService<Property> {
       maxPrice?: number;
     },
   ): void {
-    // Apply agency filter
-    if (agencyId) {
-      queryBuilder.andWhere('property.agencyId = :agencyId', { agencyId });
-    }
+    // Agency filter. Not conditional: `if (agencyId)` turned a missing scope into
+    // every agency's properties rather than none of them, and a list leaks more
+    // rows than a by-id read does. `agencyId` is required by `findAll`, and every
+    // caller populates it from the request context.
+    queryBuilder.andWhere('property.agencyId = :agencyId', { agencyId });
 
     if (!filters) {
       return;
@@ -152,7 +153,7 @@ export class PropertiesService extends BaseService<Property> {
     }
   }
 
-  async findOne(id: string, agencyId?: string): Promise<Property> {
+  async findOne(id: string, agencyId: string): Promise<Property> {
     return this.baseFindOne(id, agencyId, {
       relations: ['images'],
     });
@@ -161,7 +162,7 @@ export class PropertiesService extends BaseService<Property> {
   async update(
     id: string,
     updatePropertyDto: UpdatePropertyDto,
-    agencyId?: string,
+    agencyId: string,
   ): Promise<Property> {
     try {
       const property = await this.findOne(id, agencyId);
@@ -197,7 +198,7 @@ export class PropertiesService extends BaseService<Property> {
     }
   }
 
-  async remove(id: string, agencyId?: string): Promise<void> {
+  async remove(id: string, agencyId: string): Promise<void> {
     try {
       const property = await this.baseFindOne(id, agencyId, {
         relations: ['images'],
@@ -239,7 +240,7 @@ export class PropertiesService extends BaseService<Property> {
   async uploadImage(
     propertyId: string,
     file: Express.Multer.File,
-    agencyId?: string,
+    agencyId: string,
   ): Promise<PropertyImage> {
     // Verify property exists and belongs to agency
     await this.findOne(propertyId, agencyId);
@@ -279,7 +280,7 @@ export class PropertiesService extends BaseService<Property> {
     return await this.propertyImageRepository.save(propertyImage);
   }
 
-  async getImages(propertyId: string, agencyId?: string): Promise<PropertyImage[]> {
+  async getImages(propertyId: string, agencyId: string): Promise<PropertyImage[]> {
     await this.findOne(propertyId, agencyId);
     return await this.propertyImageRepository.find({
       where: { propertyId },
@@ -287,7 +288,7 @@ export class PropertiesService extends BaseService<Property> {
     });
   }
 
-  async deleteImage(propertyId: string, imageId: string, agencyId?: string): Promise<void> {
+  async deleteImage(propertyId: string, imageId: string, agencyId: string): Promise<void> {
     await this.findOne(propertyId, agencyId);
     const image = await this.propertyImageRepository.findOne({
       where: { id: imageId, propertyId },
@@ -308,7 +309,7 @@ export class PropertiesService extends BaseService<Property> {
     }
   }
 
-  async publish(id: string, agencyId?: string): Promise<Property> {
+  async publish(id: string, agencyId: string): Promise<Property> {
     const property = await this.findOne(id, agencyId);
     await this.validatePropertyForPublishing(property);
 
@@ -346,7 +347,7 @@ export class PropertiesService extends BaseService<Property> {
     }
   }
 
-  async unpublish(id: string, agencyId?: string, newStatus: PropertyStatus = PropertyStatus.DRAFT): Promise<Property> {
+  async unpublish(id: string, agencyId: string, newStatus: PropertyStatus = PropertyStatus.DRAFT): Promise<Property> {
     const property = await this.findOne(id, agencyId);
 
     if (newStatus !== PropertyStatus.DRAFT && newStatus !== PropertyStatus.RENTED && newStatus !== PropertyStatus.SOLD) {
