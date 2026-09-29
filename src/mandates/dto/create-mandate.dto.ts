@@ -11,9 +11,14 @@ import {
   MaxLength,
 } from 'class-validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { MandateType, MandateStatus } from '../entities/mandate.entity';
+import { MandateType } from '../entities/mandate.entity';
 import { IsDateBefore } from '../../common/validators';
 
+/**
+ * `status` is deliberately absent: a mandate is created `active` and only moves
+ * through `PATCH /mandates/:id/cancel` and the expiry sweep, so the transition
+ * is validated in one place.
+ */
 export class CreateMandateDto {
   @ApiProperty({
     description: 'Property ID for the mandate',
@@ -62,15 +67,6 @@ export class CreateMandateDto {
   @Min(0)
   @Max(100)
   commissionPercentage: number;
-
-  @ApiPropertyOptional({
-    description: 'Mandate status',
-    enum: MandateStatus,
-    example: MandateStatus.ACTIVE,
-  })
-  @IsOptional()
-  @IsEnum(MandateStatus)
-  status?: MandateStatus;
 
   @ApiPropertyOptional({
     description: 'Additional notes',

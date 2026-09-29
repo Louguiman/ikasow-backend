@@ -16,7 +16,7 @@ export class CacheService {
     @Optional() @Inject(CACHE_CLIENT) private redisClient?: RedisClientType,
   ) {
     const cacheConfig = this.configService.get('cache');
-    
+
     // Handle case where cache config is not available (e.g., in tests)
     if (!cacheConfig || !cacheConfig.ttl) {
       this.propertiesTtl = 300 * 1000; // 5 minutes default
@@ -51,11 +51,12 @@ export class CacheService {
   /**
    * Delete multiple keys matching a pattern.
    *
-   * Iterates with `SCAN`, never `KEYS`: `KEYS` blocks the event loop for the
-   * whole match, which is exactly what matters while a publish/unpublish is
-   * invalidating a large `properties:list:*` set. Requires the raw redis
-   * client, which the module injects; without one (in-memory fallback, or a
-   * unit test) there is nothing to scan and the call is a no-op.
+   * Iterates with `SCAN` (cursor loop), never `KEYS`: `KEYS` blocks the event
+   * loop for the whole match, which is exactly what matters while a
+   * publish/unpublish is invalidating a large `properties:list:*` set. Uses
+   * `scan`, which both redis 5 (the declared type here) and redis 4 (bundled
+   * inside cache-manager-redis-yet) expose with the same signature — the
+   * client's `scanIterator` does not exist on the redis 5 type.
    */
   async delPattern(pattern: string): Promise<void> {
     if (!this.redisClient) {
@@ -63,9 +64,18 @@ export class CacheService {
     }
 
     const keys: string[] = [];
-    for await (const key of this.redisClient.scanIterator({ MATCH: pattern })) {
-      keys.push(key);
-    }
+    let cursor = '0';
+    do {
+      const { cursor: nextCursor, keys: batch } = await this.redisClient.scan(
+        cursor,
+        {
+          MATCH: pattern,
+          COUNT: 100,
+        },
+      );
+      cursor = nextCursor;
+      keys.push(...batch);
+    } while (cursor !== '0');
 
     if (keys.length > 0) {
       await Promise.all(keys.map((key: string) => this.cacheManager.del(key)));
@@ -128,7 +138,10 @@ export class CacheService {
   /**
    * Invalidate property detail cache
    */
-  async invalidatePropertyDetail(slug: string, agencyId: string): Promise<void> {
+  async invalidatePropertyDetail(
+    slug: string,
+    agencyId: string,
+  ): Promise<void> {
     await this.del(this.getPropertyDetailKey(slug, agencyId));
     await this.del(this.getPropertyDetailKey(slug, undefined));
   }

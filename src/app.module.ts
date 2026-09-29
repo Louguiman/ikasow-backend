@@ -25,6 +25,10 @@ import { NotificationsModule } from './notifications/notifications.module';
 import { PaymentsModule } from './payments/payments.module';
 import { LeasesModule } from './leases/leases.module';
 import { DocumentsModule } from './documents/documents.module';
+import { MandatesModule } from './mandates/mandates.module';
+import { ActivitiesModule } from './activities/activities.module';
+import { CalendarModule } from './calendar/calendar.module';
+import { SubscriptionModule } from './subscription/subscription.module';
 import { PublicModule } from './public/public.module';
 import { JwtAuthGuard } from './auth/guards/jwt-auth.guard';
 import { RolesGuard } from './auth/guards/roles.guard';
@@ -103,6 +107,10 @@ import { SeederService } from './database/seeder/seeder.service';
     PaymentsModule,
     LeasesModule,
     DocumentsModule,
+    MandatesModule,
+    ActivitiesModule,
+    CalendarModule,
+    SubscriptionModule,
     PublicModule,
     SeederModule,
   ],
