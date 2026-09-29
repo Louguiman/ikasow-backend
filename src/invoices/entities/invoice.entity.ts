@@ -24,6 +24,13 @@ export enum InvoiceStatus {
 
 @Entity('invoices')
 @Index(['status', 'dueDate'])
+// Invoice numbers are per-agency, not global: the sequence is a shared month
+// counter for the agency that owns the invoice, so two agencies may both have
+// an INV-YYYYMM-0001. The migration (1764367400000) moves the old global
+// UNIQUE(invoice_number) here.
+@Index('UQ_invoices_agency_number', ['agencyId', 'invoiceNumber'], {
+  unique: true,
+})
 export class Invoice {
   @PrimaryGeneratedColumn('uuid')
   id: string;
@@ -36,7 +43,7 @@ export class Invoice {
   @JoinColumn({ name: 'agency_id' })
   agency: Agency;
 
-  @Column({ name: 'invoice_number', unique: true })
+  @Column({ name: 'invoice_number' })
   invoiceNumber: string;
 
   @Column({ name: 'tenant_id', nullable: true })

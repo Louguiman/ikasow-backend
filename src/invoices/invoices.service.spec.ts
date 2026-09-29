@@ -1,7 +1,7 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { getRepositoryToken } from '@nestjs/typeorm';
 import { DataSource } from 'typeorm';
-import { BadRequestException } from '@nestjs/common';
+import { BadRequestException, InternalServerErrorException } from '@nestjs/common';
 import { InvoicesService } from './invoices.service';
 import { Invoice, InvoiceStatus } from './entities/invoice.entity';
 import { InvoiceItem } from './entities/invoice-item.entity';
@@ -14,6 +14,7 @@ import { InvoiceItem } from './entities/invoice-item.entity';
  */
 describe('InvoicesService.create - agency scoping', () => {
   let service: InvoicesService;
+  let module: TestingModule;
   let manager: { create: jest.Mock; save: jest.Mock };
 
   const AGENCY = '11111111-1111-1111-1111-111111111111';
@@ -41,10 +42,11 @@ describe('InvoicesService.create - agency scoping', () => {
         .mockImplementation((...args: unknown[]) => args[args.length - 1]),
     };
 
-    // generateInvoiceNumberInTransaction queries the highest existing number in the
-    // month through the transaction manager's query builder.
+    // generateInvoiceNumberInTransaction queries the highest existing number for
+    // the agency in the month through the transaction manager's query builder.
     const numberQb = {
       where: jest.fn().mockReturnThis(),
+      andWhere: jest.fn().mockReturnThis(),
       orderBy: jest.fn().mockReturnThis(),
       getOne: jest.fn().mockResolvedValue(null),
     };
@@ -57,7 +59,7 @@ describe('InvoicesService.create - agency scoping', () => {
       createQueryBuilder: jest.fn().mockReturnValue(numberQb),
     };
 
-    const module: TestingModule = await Test.createTestingModule({
+    module = await Test.createTestingModule({
       providers: [
         InvoicesService,
         { provide: getRepositoryToken(Invoice), useValue: repo },
@@ -165,6 +167,64 @@ describe('InvoicesService.create - agency scoping', () => {
     const invoice = await service.create(dto, AGENCY);
 
     expect(invoice.invoiceNumber).toMatch(/^INV-\d{6}-\d{4}$/);
+  });
+
+  it('scopes the invoice number lookup to the agency', async () => {
+    await service.create(dto, AGENCY);
+
+    // The prefix match used to be global, so one agency's invoice numbers were
+    // decided by every other agency's. The agency must be in the query.
+    const numberQb = (manager.createQueryBuilder as jest.Mock).mock
+      .results[0]?.value;
+    expect(numberQb.andWhere).toHaveBeenCalledWith(
+      'invoice.agencyId = :agencyId',
+      { agencyId: AGENCY },
+    );
+  });
+
+  describe('concurrent invoice number race', () => {
+    it('retries on a unique-violation instead of failing the request', async () => {
+      // Two concurrent creates can read the same highest number and both try to
+      // write the next one; the (agency_id, invoice_number) unique index makes
+      // the second fail with 23505. The retry regenerates and succeeds.
+      const dataSource = module.get<{
+        transaction: jest.Mock;
+      }>(DataSource);
+      let failures = 1;
+      dataSource.transaction.mockImplementation(
+        async (cb: (m: any) => any) => {
+          if (failures-- > 0) {
+            const error = new Error('duplicate key value violates unique');
+            (error as any).code = '23505';
+            throw error;
+          }
+          return cb(manager);
+        },
+      );
+
+      const invoice = await service.create(dto, AGENCY);
+
+      expect(invoice.invoiceNumber).toMatch(/^INV-\d{6}-\d{4}$/);
+      expect(dataSource.transaction).toHaveBeenCalledTimes(2);
+    });
+
+    it('gives up after three attempts', async () => {
+      const dataSource = module.get<{
+        transaction: jest.Mock;
+      }>(DataSource);
+      dataSource.transaction.mockImplementation(async () => {
+        const error = new Error('duplicate key value violates unique');
+        (error as any).code = '23505';
+        throw error;
+      });
+
+      // After the retries are exhausted the raw driver error reaches
+      // ErrorHandler, which converts a generic Error into a 500.
+      await expect(
+        service.create(dto, AGENCY),
+      ).rejects.toThrow(InternalServerErrorException);
+      expect(dataSource.transaction).toHaveBeenCalledTimes(3);
+    });
   });
 
   it('saves the invoice line items alongside the invoice', async () => {

@@ -170,6 +170,12 @@ describe('PropertiesService - SEO Update Handling', () => {
       expect(result.seoTitle).toBeDefined();
       expect(result.seoTitle.length).toBeGreaterThanOrEqual(30);
       expect(result.seoTitle.length).toBeLessThanOrEqual(60);
+
+      // baseUpdate persists via repository.update(id, dto), so the generated
+      // value must be in the DTO that reaches the repository — putting it on
+      // the loaded entity instead meant every update discarded it.
+      const persisted = mockPropertyRepository.update.mock.calls.at(-1)[1];
+      expect(persisted.seoTitle).toBe(result.seoTitle);
     });
 
     it('should generate default SEO description when not provided', async () => {
@@ -187,6 +193,25 @@ describe('PropertiesService - SEO Update Handling', () => {
       expect(result.seoDescription).toBeDefined();
       expect(result.seoDescription.length).toBeGreaterThanOrEqual(120);
       expect(result.seoDescription.length).toBeLessThanOrEqual(160);
+
+      const persisted = mockPropertyRepository.update.mock.calls.at(-1)[1];
+      expect(persisted.seoDescription).toBe(result.seoDescription);
+    });
+
+    it('does not overwrite a stored SEO title with a generated one', async () => {
+      const propertyId = 'test-id';
+      const existingSeoTitle = 'Existing SEO title of exactly thirty chars ok';
+      const mockProperty = createMockProperty({
+        id: propertyId,
+        seoTitle: existingSeoTitle,
+      });
+
+      storedProperty = mockProperty;
+
+      await service.update(propertyId, { title: 'Updated Title' }, 'agency-1');
+
+      const persisted = mockPropertyRepository.update.mock.calls.at(-1)[1];
+      expect(persisted.seoTitle).toBeUndefined();
     });
 
     it('should accept valid SEO metadata', async () => {

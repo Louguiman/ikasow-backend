@@ -65,14 +65,22 @@ export class ServiceRequestsService extends BaseService<ServiceRequest> {
         const agencyStaff = await this.usersService.findAgencyStaff(agencyId);
 
         if (agencyStaff.length > 0) {
+          // property_id is nullable, so the address is read defensively. The
+          // message used to deref `property.address` directly, turning a
+          // property-less request into a 500 after the row had already been saved.
+          const address = serviceRequestWithRelations.property?.address;
+          const location = address ? ` at ${address}` : '';
           const notifications = agencyStaff.map((staff) => ({
             userId: staff.id,
             title: 'New Service Request',
-            message: `A new service request has been submitted: ${serviceRequestWithRelations.title} at ${serviceRequestWithRelations.property.address}`,
+            message: `A new service request has been submitted: ${serviceRequestWithRelations.title}${location}`,
             type: NotificationType.SERVICE_REQUEST,
           }));
 
-          await this.notificationsService.createBulk(notifications);
+          // Written through the transaction manager so the notification commits
+          // or rolls back with the service request it describes. Passing the
+          // manager keeps the row out of an independent connection.
+          await this.notificationsService.createBulk(notifications, manager);
         }
 
         return serviceRequestWithRelations;

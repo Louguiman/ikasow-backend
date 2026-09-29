@@ -185,11 +185,14 @@ export class PropertiesService extends BaseService<Property> {
     }
 
     if (property.title && property.city && property.description) {
+      // The generated defaults are written into the DTO, not the entity.
+      // `baseUpdate` persists `repository.update(id, data)`, so a value placed
+      // on the loaded entity was silently discarded on every update.
       if (!property.seoTitle && !updateDto.seoTitle) {
-        property.seoTitle = this.seoService.generateDefaultTitle(property);
+        updateDto.seoTitle = this.seoService.generateDefaultTitle(property);
       }
       if (!property.seoDescription && !updateDto.seoDescription) {
-        property.seoDescription = this.seoService.generateDefaultDescription(property);
+        updateDto.seoDescription = this.seoService.generateDefaultDescription(property);
       }
     }
   }

@@ -42,44 +42,87 @@ export class InvoicesService extends BaseService<Invoice> {
         );
       }
 
-      // Use transaction to ensure invoice number generation and creation are atomic
-      return await this.dataSource.transaction(async (manager) => {
-        // Generate unique invoice number within transaction
-        const invoiceNumber = await this.generateInvoiceNumberInTransaction(manager);
-
-        // Calculate totals from items
-        const { subtotal, items } = this.calculateTotals(createInvoiceDto.items);
-        // `tax` is a *rate*, not an amount: CreateInvoiceDto caps it at 100 and
-        // the form labels it "Taxe (%)", so the rate is what gets stored and the
-        // amount is derived. Adding the rate flat meant an invoice of 500 000
-        // with tax 10 totalled 500 010 instead of 550 000.
-        const tax = createInvoiceDto.tax || 0;
-        const total = subtotal + this.calculateTaxAmount(subtotal, tax);
-
-        // Create invoice
-        const invoice = manager.create(Invoice, {
-          invoiceNumber,
-          // invoices.agency_id is NOT NULL with no default, and create() used to
-          // leave it unset, so every POST /invoices failed with
-          // "null value in column "agency_id" ... violates not-null constraint".
-          agencyId,
-          tenantId: createInvoiceDto.tenantId,
-          clientId: createInvoiceDto.clientId,
-          issueDate: createInvoiceDto.issueDate,
-          dueDate: createInvoiceDto.dueDate,
-          status: createInvoiceDto.status || InvoiceStatus.DRAFT,
-          subtotal,
-          tax,
-          total,
-          notes: createInvoiceDto.notes,
-          items,
-        });
-
-        return await manager.save(invoice);
-      });
+      return await this.createWithRetry(createInvoiceDto, agencyId);
     } catch (error) {
       ErrorHandler.handle(error, 'InvoicesService.create');
     }
+  }
+
+  private async createWithRetry(
+    createInvoiceDto: CreateInvoiceDto,
+    agencyId: string,
+  ): Promise<Invoice> {
+    // Two concurrent invoices for the same agency can pick the same next
+    // sequence number because the lookup for the highest existing number runs
+    // first. The (agency_id, invoice_number) unique index is what makes the
+    // second one fail; a short retry regenerates the number instead of 500ing.
+    const MAX_ATTEMPTS = 3;
+    let lastError: unknown;
+
+    for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt++) {
+      try {
+        return await this.createInTransaction(createInvoiceDto, agencyId);
+      } catch (error: unknown) {
+        if (!this.isUniqueViolation(error)) {
+          throw error;
+        }
+        lastError = error;
+      }
+    }
+
+    throw lastError;
+  }
+
+  private isUniqueViolation(error: unknown): boolean {
+    return (
+      typeof error === 'object' &&
+      error !== null &&
+      (error as { code?: string }).code === '23505'
+    );
+  }
+
+  private async createInTransaction(
+    createInvoiceDto: CreateInvoiceDto,
+    agencyId: string,
+  ): Promise<Invoice> {
+    // Use transaction to ensure invoice number generation and creation are atomic
+    return await this.dataSource.transaction(async (manager) => {
+      // Generate unique invoice number within transaction
+      const invoiceNumber = await this.generateInvoiceNumberInTransaction(
+        manager,
+        agencyId,
+      );
+
+      // Calculate totals from items
+      const { subtotal, items } = this.calculateTotals(createInvoiceDto.items);
+      // `tax` is a *rate*, not an amount: CreateInvoiceDto caps it at 100 and
+      // the form labels it "Taxe (%)", so the rate is what gets stored and the
+      // amount is derived. Adding the rate flat meant an invoice of 500 000
+      // with tax 10 totalled 500 010 instead of 550 000.
+      const tax = createInvoiceDto.tax || 0;
+      const total = subtotal + this.calculateTaxAmount(subtotal, tax);
+
+      // Create invoice
+      const invoice = manager.create(Invoice, {
+        invoiceNumber,
+        // invoices.agency_id is NOT NULL with no default, and create() used to
+        // leave it unset, so every POST /invoices failed with
+        // "null value in column "agency_id" ... violates not-null constraint".
+        agencyId,
+        tenantId: createInvoiceDto.tenantId,
+        clientId: createInvoiceDto.clientId,
+        issueDate: createInvoiceDto.issueDate,
+        dueDate: createInvoiceDto.dueDate,
+        status: createInvoiceDto.status || InvoiceStatus.DRAFT,
+        subtotal,
+        tax,
+        total,
+        notes: createInvoiceDto.notes,
+        items,
+      });
+
+      return await manager.save(invoice);
+    });
   }
 
   async findAll(
@@ -275,16 +318,22 @@ export class InvoicesService extends BaseService<Invoice> {
     }
   }
 
-  private async generateInvoiceNumberInTransaction(manager: any): Promise<string> {
+  private async generateInvoiceNumberInTransaction(
+    manager: any,
+    agencyId: string,
+  ): Promise<string> {
     const year = new Date().getFullYear();
     const month = String(new Date().getMonth() + 1).padStart(2, '0');
 
-    // Find the last invoice number for this month within transaction
+    // Find the last invoice number for this agency this month within the
+    // transaction. The lookup used to be global, so one agency's invoices
+    // consumed the sequence of every other agency's.
     const lastInvoice = await manager
       .createQueryBuilder(Invoice, 'invoice')
       .where('invoice.invoiceNumber LIKE :prefix', {
         prefix: `INV-${year}${month}%`,
       })
+      .andWhere('invoice.agencyId = :agencyId', { agencyId })
       .orderBy('invoice.invoiceNumber', 'DESC')
       .getOne();
 

@@ -4,6 +4,7 @@ import { DataSource } from 'typeorm';
 import { ServiceRequestsService } from './service-requests.service';
 import { UsersService } from '../users/users.service';
 import { NotificationsService } from '../notifications/notifications.service';
+import { NotificationType } from '../notifications/entities/notification.entity';
 import { ServiceRequest } from './entities/service-request.entity';
 
 /**
@@ -14,11 +15,14 @@ import { ServiceRequest } from './entities/service-request.entity';
  */
 describe('ServiceRequestsService.create - agency scoping', () => {
   let service: ServiceRequestsService;
+  let qb: { getOne: jest.Mock; andWhere?: jest.Mock };
   let manager: {
     create: jest.Mock;
     save: jest.Mock;
     createQueryBuilder: jest.Mock;
   };
+  let notificationsService: { createBulk: jest.Mock };
+  let usersService: { findAgencyStaff: jest.Mock };
 
   const AGENCY = '11111111-1111-1111-1111-111111111111';
   const OTHER_AGENCY = '22222222-2222-2222-2222-222222222222';
@@ -45,7 +49,7 @@ describe('ServiceRequestsService.create - agency scoping', () => {
         .mockImplementation((...args: unknown[]) => args[args.length - 1]),
     };
 
-    const qb = {
+    qb = {
       leftJoinAndSelect: jest.fn().mockReturnThis(),
       where: jest.fn().mockReturnThis(),
       getOne: jest.fn().mockResolvedValue({
@@ -63,6 +67,13 @@ describe('ServiceRequestsService.create - agency scoping', () => {
       createQueryBuilder: jest.fn().mockReturnValue(qb),
     };
 
+    usersService = {
+      findAgencyStaff: jest.fn().mockResolvedValue([]),
+    };
+    notificationsService = {
+      createBulk: jest.fn().mockResolvedValue([]),
+    };
+
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         ServiceRequestsService,
@@ -75,14 +86,8 @@ describe('ServiceRequestsService.create - agency scoping', () => {
               .mockImplementation(async (cb) => cb(manager)),
           },
         },
-        {
-          provide: UsersService,
-          useValue: { findAgencyStaff: jest.fn().mockResolvedValue([]) },
-        },
-        {
-          provide: NotificationsService,
-          useValue: { createBulk: jest.fn().mockResolvedValue([]) },
-        },
+        { provide: UsersService, useValue: usersService },
+        { provide: NotificationsService, useValue: notificationsService },
       ],
     }).compile();
 
@@ -114,5 +119,66 @@ describe('ServiceRequestsService.create - agency scoping', () => {
     expect(persisted.priority).toBe('high');
     expect(persisted.tenantId).toBe(dto.tenantId);
     expect(persisted.propertyId).toBe(dto.propertyId);
+  });
+
+  describe('staff notifications', () => {
+    const STAFF = '66666666-6666-6666-6666-666666666666';
+    const OTHER_STAFF = '77777777-7777-7777-7777-777777777777';
+
+    it('notifies agency staff inside the transaction manager', async () => {
+      usersService.findAgencyStaff.mockResolvedValue([
+        { id: STAFF },
+        { id: OTHER_STAFF },
+      ]);
+
+      await service.create(dto, AGENCY);
+
+      expect(notificationsService.createBulk).toHaveBeenCalledTimes(1);
+      const [notifications, passingManager] =
+        notificationsService.createBulk.mock.calls[0];
+      expect(notifications).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            userId: STAFF,
+            type: NotificationType.SERVICE_REQUEST,
+            message: expect.stringContaining('Leaking tap'),
+          }),
+          expect.objectContaining({
+            userId: OTHER_STAFF,
+            type: NotificationType.SERVICE_REQUEST,
+          }),
+        ]),
+      );
+      // The manager must be the transaction manager, otherwise the rows would be
+      // committed (or rolled back) independently of the service request.
+      expect(passingManager).toBe(manager);
+    });
+
+    it('does not deref a nullable property', async () => {
+      usersService.findAgencyStaff.mockResolvedValue([{ id: STAFF }]);
+      qb.getOne.mockResolvedValue({
+        id: 'sr-1',
+        title: 'Floor collapse',
+        property: null,
+      });
+
+      await expect(service.create(dto, AGENCY)).resolves.toBeDefined();
+
+      const [notifications] = notificationsService.createBulk.mock.calls[0];
+      expect(notifications[0].message).toBe(
+        'A new service request has been submitted: Floor collapse',
+      );
+    });
+
+    it('keeps the property address in the message when present', async () => {
+      usersService.findAgencyStaff.mockResolvedValue([{ id: STAFF }]);
+
+      await service.create(dto, AGENCY);
+
+      const [notifications] = notificationsService.createBulk.mock.calls[0];
+      expect(notifications[0].message).toBe(
+        'A new service request has been submitted: Leaking tap at ACI 2000',
+      );
+    });
   });
 });

@@ -1,6 +1,6 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { Repository, EntityManager } from 'typeorm';
 import { Notification } from './entities/notification.entity';
 import { CreateNotificationDto } from './dto/create-notification.dto';
 
@@ -28,11 +28,17 @@ export class NotificationsService {
 
   async createBulk(
     createNotificationDtos: CreateNotificationDto[],
+    manager?: EntityManager,
   ): Promise<Notification[]> {
-    const notifications = this.notificationRepository.create(
-      createNotificationDtos,
-    );
-    return await this.notificationRepository.save(notifications);
+    // When a manager is supplied (the service-request create path), the rows are
+    // written inside that transaction. Otherwise they used an independent
+    // connection/call, so a notification could commit while the service request
+    // they describe rolled back.
+    const repository = manager
+      ? manager.getRepository(Notification)
+      : this.notificationRepository;
+    const notifications = repository.create(createNotificationDtos);
+    return await repository.save(notifications);
   }
 
   /**
