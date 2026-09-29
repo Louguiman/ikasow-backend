@@ -8,6 +8,7 @@ import { BaseService } from './base.service';
 interface Row {
   id: string;
   agencyId?: string;
+  title?: string;
 }
 
 /**
@@ -148,6 +149,53 @@ describe('BaseService — agency scope fails closed', () => {
       await expect(service.findOne(ID, '')).rejects.toBeInstanceOf(
         InternalServerErrorException,
       );
+    });
+  });
+
+  /**
+   * The DTO boundary is the first guard (both `UpdateClientDto` and
+   * `UpdateTenantDto` omit `agencyId`, so `forbidNonWhitelisted` answers 400).
+   * This is the second, for the caller that reaches `baseUpdate` with a payload
+   * no DTO validated. It matters because the write is not merely wrong, it is
+   * unrecoverable from the caller's side: the row moves out of the agency it was
+   * verified against, and the re-read that follows then 404s in the caller's own
+   * tenant — having already committed the move.
+   */
+  describe('when the payload carries an agencyId', () => {
+    const OTHER_AGENCY = 'other-agency';
+
+    it('strips it, so a row cannot be moved out of its agency', async () => {
+      await service.update(ID, { id: ID, agencyId: OTHER_AGENCY }, AGENCY);
+
+      expect(repo.update).toHaveBeenCalledWith(ID, { id: ID });
+    });
+
+    it('strips it even when it is the only field supplied', async () => {
+      await service.update(
+        ID,
+        { agencyId: OTHER_AGENCY } as Partial<Row>,
+        AGENCY,
+      );
+
+      expect(repo.update).toHaveBeenCalledWith(ID, {});
+    });
+
+    it("does not mutate the caller's object while stripping", async () => {
+      const data = { id: ID, agencyId: OTHER_AGENCY };
+
+      await service.update(ID, data, AGENCY);
+
+      expect(data.agencyId).toBe(OTHER_AGENCY);
+    });
+
+    it('still writes every other field', async () => {
+      await service.update(
+        ID,
+        { id: ID, agencyId: OTHER_AGENCY, title: 'x' } as Partial<Row>,
+        AGENCY,
+      );
+
+      expect(repo.update).toHaveBeenCalledWith(ID, { id: ID, title: 'x' });
     });
   });
 

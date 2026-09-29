@@ -146,6 +146,17 @@ export abstract class BaseService<T extends { id: string }> {
 
   /**
    * Update an entity with agency scoping
+   *
+   * `agencyId` is stripped from `data` before the write. The row was just located
+   * by `(id, agencyId)`, so an `agencyId` inside the payload is either a no-op or
+   * a move out of the tenant the row was verified to belong to — and the
+   * re-read below would then 404 in the caller's own agency, having already
+   * written the move. The DTO boundary (`UpdateClientDto`/`UpdateTenantDto` omit
+   * the field) is the first guard; this is the second, for the caller that
+   * bypasses a DTO. The one service that legitimately moves a user between
+   * agencies (`UsersService.update`, admin-only, role-hierarchy checked) does its
+   * own `findOne`/`save` and never comes through here.
+   *
    * @param id - The entity ID
    * @param data - Data to update
    * @param agencyId - Agency ID; required, and an absent value throws
@@ -165,8 +176,11 @@ export abstract class BaseService<T extends { id: string }> {
       // Verify entity exists and belongs to agency
       await this.baseFindOne(id, agencyId);
 
+      const { agencyId: _ignored, ...safeData } = data as DeepPartial<T> &
+        Record<string, unknown>;
+
       // Update the entity
-      await this.repository.update(id, data as any);
+      await this.repository.update(id, safeData as any);
 
       // Return the updated entity
       return await this.baseFindOne(id, agencyId);
