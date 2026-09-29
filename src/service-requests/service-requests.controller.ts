@@ -6,7 +6,9 @@ import {
   Patch,
   Param,
   Query,
+  Req,
 } from '@nestjs/common';
+import type { Request } from 'express';
 import { ApiTags, ApiBearerAuth, ApiOperation, ApiResponse } from '@nestjs/swagger';
 import { ServiceRequestsService } from './service-requests.service';
 import { FilterServiceRequestDto } from './dto/filter-service-request.dto';
@@ -94,8 +96,15 @@ export class ServiceRequestsController {
     status: 404,
     description: 'Service request not found',
   })
-  findOne(@Param('id') id: string, @CurrentAgencyId() agencyId: string) {
-    return this.serviceRequestsService.findOne(id, agencyId);
+  findOne(
+    @Param('id') id: string,
+    @CurrentAgencyId() agencyId: string,
+    @Req() req: Request,
+  ) {
+    return this.serviceRequestsService.findOne(id, agencyId, {
+      userId: (req.user as any).sub,
+      role: (req.user as any).role,
+    });
   }
 
   @Patch(':id')
@@ -155,8 +164,12 @@ export class ServiceRequestsController {
   findByTenant(
     @Param('tenantId') tenantId: string,
     @CurrentAgencyId() agencyId: string,
+    @Req() req: Request,
   ) {
-    return this.serviceRequestsService.findByTenant(tenantId, agencyId);
+    return this.serviceRequestsService.findByTenant(tenantId, agencyId, {
+      userId: (req.user as any).sub,
+      role: (req.user as any).role,
+    });
   }
 }
 

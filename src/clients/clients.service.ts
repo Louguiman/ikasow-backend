@@ -1,10 +1,12 @@
 import {
   Injectable,
   BadRequestException,
+  NotFoundException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { Client } from './entities/client.entity';
+import { UserRole } from '../users/entities/user.entity';
 import { CreateClientDto } from './dto/create-client.dto';
 import { UpdateClientDto } from './dto/update-client.dto';
 import { FilterClientDto } from './dto/filter-client.dto';
@@ -82,10 +84,25 @@ export class ClientsService extends BaseService<Client> {
     return new PaginatedResponse(clients, total, page, effectiveLimit);
   }
 
-  async findOne(id: string, agencyId: string): Promise<Client> {
-    return this.baseFindOne(id, agencyId, {
+  async findOne(
+    id: string,
+    agencyId: string,
+    caller?: { userId: string; role: UserRole },
+  ): Promise<Client> {
+    const client = await this.baseFindOne(id, agencyId, {
       relations: ['user'],
     });
+
+    // Object-level scoping for the client self-service caller. Agency scope
+    // does not protect them here: every client of an agency shares one
+    // agency_id, so before this a client could read another client's record by
+    // id within the same agency. Refusal is a 404 rather than a 403 so the
+    // caller cannot confirm another client row exists.
+    if (caller?.role === UserRole.CLIENT && client.userId !== caller.userId) {
+      throw new NotFoundException(`Client with ID ${id} not found`);
+    }
+
+    return client;
   }
 
   async update(

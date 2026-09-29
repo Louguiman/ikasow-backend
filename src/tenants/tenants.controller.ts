@@ -98,8 +98,10 @@ export class TenantsController {
     status: 404,
     description: 'Tenant not found',
   })
-  findOne(@Param('id') id: string, @CurrentAgencyId() agencyId: string) {
-    return this.tenantsService.findOne(id, agencyId);
+  findOne(@Param('id') id: string, @Req() req: any) {
+    return this.withSelfCheck(id, req, (agencyId) =>
+      this.tenantsService.findOne(id, agencyId),
+    );
   }
 
   @Patch(':id')

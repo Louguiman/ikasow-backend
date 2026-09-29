@@ -7,7 +7,9 @@ import {
   Param,
   Delete,
   Query,
+  Req,
 } from '@nestjs/common';
+import type { Request } from 'express';
 import { ApiTags, ApiBearerAuth, ApiOperation, ApiResponse } from '@nestjs/swagger';
 import { InvoicesService } from './invoices.service';
 import { FilterInvoiceDto } from './dto/filter-invoice.dto';
@@ -96,8 +98,15 @@ export class InvoicesController {
     status: 404,
     description: 'Invoice not found',
   })
-  findOne(@Param('id') id: string, @CurrentAgencyId() agencyId: string) {
-    return this.invoicesService.findOne(id, agencyId);
+  findOne(
+    @Param('id') id: string,
+    @CurrentAgencyId() agencyId: string,
+    @Req() req: Request,
+  ) {
+    return this.invoicesService.findOne(id, agencyId, {
+      userId: (req.user as any).sub,
+      role: (req.user as any).role,
+    });
   }
 
   @Patch(':id')

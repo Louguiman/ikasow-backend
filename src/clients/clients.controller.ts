@@ -7,7 +7,9 @@ import {
   Param,
   Delete,
   Query,
+  Req,
 } from '@nestjs/common';
+import type { Request } from 'express';
 import { ApiTags, ApiBearerAuth, ApiOperation, ApiResponse } from '@nestjs/swagger';
 import { ClientsService } from './clients.service';
 import { FilterClientDto } from './dto/filter-client.dto';
@@ -92,8 +94,15 @@ export class ClientsController {
     status: 404,
     description: 'Client not found',
   })
-  findOne(@Param('id') id: string, @CurrentAgencyId() agencyId: string) {
-    return this.clientsService.findOne(id, agencyId);
+  findOne(
+    @Param('id') id: string,
+    @CurrentAgencyId() agencyId: string,
+    @Req() req: Request,
+  ) {
+    return this.clientsService.findOne(id, agencyId, {
+      userId: (req.user as any).sub,
+      role: (req.user as any).role,
+    });
   }
 
   @Patch(':id')

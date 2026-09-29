@@ -7,6 +7,7 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, DataSource } from 'typeorm';
 import { Invoice, InvoiceStatus } from './entities/invoice.entity';
 import { InvoiceItem } from './entities/invoice-item.entity';
+import { UserRole } from '../users/entities/user.entity';
 import { CreateInvoiceDto } from './dto/create-invoice.dto';
 import { FilterInvoiceDto } from './dto/filter-invoice.dto';
 import { UpdateInvoiceDto } from './dto/update-invoice.dto';
@@ -201,20 +202,47 @@ export class InvoicesService extends BaseService<Invoice> {
     }
   }
 
-  async findOne(id: string, agencyId: string): Promise<Invoice> {
-    const invoice = await this.repository
+  /**
+   * Fetch a single invoice, agency-scoped and — for a `TENANT`/`CLIENT` caller —
+   * object-scoped to the caller's own row.
+   *
+   * @param id - Invoice id
+   * @param agencyId - Agency from the request context
+   * @param caller - The authenticated caller. A `TENANT` may only read an
+   *   invoice addressed to their own tenant (`invoice.tenant.userId ===
+   *   caller.userId`), a `CLIENT` one addressed to their own client; anyone
+   *   else gets the 404 `findOne` already throws for a row outside the agency,
+   *   so another tenant's invoice is indistinguishable from a missing one.
+   */
+  async findOne(
+    id: string,
+    agencyId: string,
+    caller?: { userId: string; role: UserRole },
+  ): Promise<Invoice> {
+    const queryBuilder = this.repository
       .createQueryBuilder('invoice')
       .leftJoinAndSelect('invoice.items', 'items')
       .leftJoinAndSelect('invoice.tenant', 'tenant')
       .leftJoinAndSelect('invoice.client', 'client')
       .where('invoice.id = :id', { id })
-      .andWhere(
-        '(tenant.agencyId = :agencyId OR client.agencyId = :agencyId)',
-        {
-          agencyId,
-        },
-      )
-      .getOne();
+      .andWhere('invoice.agencyId = :agencyId', { agencyId });
+
+    // Object-level scoping for the tenant/client self-service caller. Agency
+    // scope does not protect them here: every invoice of an agency shares one
+    // agency_id. `invoice.tenant`/`invoice.client` are null when the invoice is
+    // addressed to the other party, so the LIKE-style join predicate is dead for
+    // those rows — a tenant cannot read a client-only invoice, and vice versa.
+    if (caller?.role === UserRole.TENANT) {
+      queryBuilder.andWhere('tenant.userId = :callerUserId', {
+        callerUserId: caller.userId,
+      });
+    } else if (caller?.role === UserRole.CLIENT) {
+      queryBuilder.andWhere('client.userId = :callerUserId', {
+        callerUserId: caller.userId,
+      });
+    }
+
+    const invoice = await queryBuilder.getOne();
 
     if (!invoice) {
       throw new NotFoundException(`Invoice with ID ${id} not found`);

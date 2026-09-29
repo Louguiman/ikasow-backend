@@ -10,6 +10,7 @@ import { FilterServiceRequestDto } from './dto/filter-service-request.dto';
 import { UpdateServiceRequestDto } from './dto/update-service-request.dto';
 import { NotificationsService } from '../notifications/notifications.service';
 import { UsersService } from '../users/users.service';
+import { UserRole } from '../users/entities/user.entity';
 import { NotificationType } from '../notifications/entities/notification.entity';
 import { ErrorHandler } from '../common/utils/error-handler';
 import { PaginatedResponse } from '../common/dto/paginated-response.dto';
@@ -156,16 +157,35 @@ export class ServiceRequestsService extends BaseService<ServiceRequest> {
     }
   }
 
-  async findOne(id: string, agencyId?: string): Promise<ServiceRequest> {
+  async findOne(
+    id: string,
+    agencyId?: string,
+    caller?: { userId: string; role: UserRole },
+  ): Promise<ServiceRequest> {
     const queryBuilder = this.repository
       .createQueryBuilder('serviceRequest')
       .leftJoinAndSelect('serviceRequest.tenant', 'tenant')
       .leftJoinAndSelect('serviceRequest.property', 'property')
       .where('serviceRequest.id = :id', { id });
 
-    // Filter by agency through property relationship
+    // Scope on the service request's own agency_id, not the property's — the
+    // same rule findAll follows. The property-based scope silently dropped every
+    // request whose property was missing and let a request inherit whichever
+    // property happened to be attached.
     if (agencyId) {
-      queryBuilder.andWhere('property.agencyId = :agencyId', { agencyId });
+      queryBuilder.andWhere('serviceRequest.agencyId = :agencyId', {
+        agencyId,
+      });
+    }
+
+    // Object-level scoping for the tenant self-service caller. Agency scope does
+    // not protect a tenant here: every request of an agency shares one
+    // agency_id, so before this there was nothing stopping a tenant from reading
+    // another tenant's request by id within the same agency.
+    if (caller?.role === UserRole.TENANT) {
+      queryBuilder.andWhere('tenant.userId = :callerUserId', {
+        callerUserId: caller.userId,
+      });
     }
 
     const serviceRequest = await queryBuilder.getOne();
@@ -203,6 +223,7 @@ export class ServiceRequestsService extends BaseService<ServiceRequest> {
   async findByTenant(
     tenantId: string,
     agencyId?: string,
+    caller?: { userId: string; role: UserRole },
   ): Promise<ServiceRequest[]> {
     try {
       const queryBuilder = this.repository
@@ -211,9 +232,22 @@ export class ServiceRequestsService extends BaseService<ServiceRequest> {
         .leftJoinAndSelect('serviceRequest.property', 'property')
         .where('serviceRequest.tenantId = :tenantId', { tenantId });
 
-      // Filter by agency through property relationship
+      // Scope on the service request's own agency_id. It used to go through
+      // `property.agencyId`, which silently dropped every request whose property
+      // was missing and let a request inherit whichever property was attached.
       if (agencyId) {
-        queryBuilder.andWhere('property.agencyId = :agencyId', { agencyId });
+        queryBuilder.andWhere('serviceRequest.agencyId = :agencyId', {
+          agencyId,
+        });
+      }
+
+      // Tenant self-service: only the caller's own requests are theirs to list.
+      // Every tenant of an agency shares one agency_id, so agency scope alone
+      // would let a tenant read another tenant's request history.
+      if (caller?.role === UserRole.TENANT) {
+        queryBuilder.andWhere('tenant.userId = :callerUserId', {
+          callerUserId: caller.userId,
+        });
       }
 
       queryBuilder.orderBy('serviceRequest.createdAt', 'DESC');
