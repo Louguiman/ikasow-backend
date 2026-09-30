@@ -2,6 +2,7 @@ import {
   Injectable,
   NotFoundException,
   ConflictException,
+  ForbiddenException,
   Logger,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
@@ -153,6 +154,7 @@ export class UsersService {
     id: string,
     updateUserDto: UpdateUserDto,
     agencyId?: string,
+    isPlatformAdmin: boolean = false,
   ): Promise<Omit<User, 'password'>> {
     try {
       const where: any = { id };
@@ -165,6 +167,12 @@ export class UsersService {
       if (!user) {
         throw new NotFoundException(`User with ID ${id} not found`);
       }
+
+      // A user row is what grants access to a tenant, so moving one between
+      // agencies hands a stranger that tenant's login. The role hierarchy
+      // guards `role` (see UsersController.update); `agencyId` needs its own
+      // rule because hierarchy says nothing about tenancy.
+      this.assertAgencyMoveAllowed(updateUserDto, agencyId, isPlatformAdmin);
 
       // Check if email is being updated and if it's already taken
       if (updateUserDto.email && updateUserDto.email !== user.email) {
@@ -185,6 +193,51 @@ export class UsersService {
     } catch (error) {
       ErrorHandler.handle(error, 'UsersService.update');
     }
+  }
+
+  /**
+   * Refuses a cross-agency move for anyone but a platform admin, and drops a
+   * same-agency echo so the write cannot touch the column at all.
+   *
+   * This mirrors `create`, where `UsersController` overwrites `agencyId` with
+   * the caller's agency for every non-platform caller. It lives in the service
+   * rather than the controller because the controller's hierarchy check covers
+   * `role` and knows nothing about tenancy — `canManageRole(admin, admin)` is
+   * true, so an agency `ADMIN` passes it while naming a different tenant.
+   *
+   * `FK_users_agency` is `ON DELETE RESTRICT` but is not a substitute: it
+   * rejects a *non-existent* agency with a 400, while accepting a perfectly
+   * valid sibling one. Verified live before the fix — an agency-A admin PATCHed
+   * a user with `{"agencyId": "<agency B>"}` and the row moved, handing a
+   * stranger a login to that tenant.
+   *
+   * Keyed on the role rather than on whether an agency is present, because
+   * `AgencyScopeGuard` returns early for a platform admin — `agencyId` is
+   * `undefined` for them, and keying on its absence would lock them out of the
+   * one legitimate use of this field.
+   */
+  private assertAgencyMoveAllowed(
+    updateUserDto: UpdateUserDto,
+    agencyId?: string,
+    isPlatformAdmin: boolean = false,
+  ): void {
+    // `UpdateUserDto` is `PartialType(CreateUserDto)`, whose mapped type drops
+    // the property types, so read through `CreateUserDto` to get a real one.
+    const requested = (updateUserDto as Partial<CreateUserDto>).agencyId;
+
+    if (isPlatformAdmin || !requested) {
+      return;
+    }
+
+    if (requested !== agencyId) {
+      throw new ForbiddenException(
+        'Only a platform admin can move a user to another agency',
+      );
+    }
+
+    // Same agency, so this is a no-op rather than a move. Dropping it keeps the
+    // column out of the write entirely.
+    delete updateUserDto.agencyId;
   }
 
   async remove(id: string, agencyId?: string): Promise<void> {

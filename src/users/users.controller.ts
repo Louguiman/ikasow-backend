@@ -205,7 +205,12 @@ export class UsersController {
       );
     }
 
-    return this.usersService.update(id, updateUserDto, agencyId);
+    return this.usersService.update(
+      id,
+      updateUserDto,
+      agencyId,
+      req.user.role === UserRole.PLATFORM_ADMIN,
+    );
   }
 
   @Delete(':id')
