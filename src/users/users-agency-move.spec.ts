@@ -85,7 +85,7 @@ describe('UsersService.update — a user cannot be moved between agencies', () =
     const dto = { agencyId: AGENCY_B } as UpdateUserDto;
 
     await expect(
-      service.update(USER_ID, dto, AGENCY_A, false),
+      service.update(USER_ID, dto, { agencyId: AGENCY_A }),
     ).rejects.toBeInstanceOf(ForbiddenException);
 
     expect(repo.save).not.toHaveBeenCalled();
@@ -99,7 +99,7 @@ describe('UsersService.update — a user cannot be moved between agencies', () =
     const dto = { agencyId: AGENCY_B } as UpdateUserDto;
 
     await expect(
-      service.update(USER_ID, dto, AGENCY_A, false),
+      service.update(USER_ID, dto, { agencyId: AGENCY_A }),
     ).rejects.toBeInstanceOf(ForbiddenException);
 
     expect(loaded?.agencyId).toBe(AGENCY_A);
@@ -112,7 +112,7 @@ describe('UsersService.update — a user cannot be moved between agencies', () =
     // an agency happens to be present.
     const dto = { agencyId: AGENCY_B } as UpdateUserDto;
 
-    await service.update(USER_ID, dto, undefined, true);
+    await service.update(USER_ID, dto, { isPlatformAdmin: true });
 
     expect(repo.save).toHaveBeenCalledTimes(1);
     expect(persisted?.agencyId).toBe(AGENCY_B);
@@ -123,7 +123,7 @@ describe('UsersService.update — a user cannot be moved between agencies', () =
     // is dropped rather than written, so the column is never touched.
     const dto = { agencyId: AGENCY_A, firstName: 'Ali' } as UpdateUserDto;
 
-    await service.update(USER_ID, dto, AGENCY_A, false);
+    await service.update(USER_ID, dto, { agencyId: AGENCY_A });
 
     expect(repo.save).toHaveBeenCalledTimes(1);
     expect(persisted?.agencyId).toBe(AGENCY_A);
@@ -137,21 +137,20 @@ describe('UsersService.update — a user cannot be moved between agencies', () =
       role: UserRole.ACCOUNTANT,
     } as UpdateUserDto;
 
-    await service.update(USER_ID, dto, AGENCY_A, false);
+    await service.update(USER_ID, dto, { agencyId: AGENCY_A });
 
     expect(repo.save).toHaveBeenCalledTimes(1);
     expect(persisted?.firstName).toBe('Ali');
   });
 
   it('scopes the lookup to the caller agency, so an id from another tenant 404s', async () => {
-    // The `where` is built from `agencyId`, so a non-platform admin naming a
+    // The `where` is built from the scope, so a non-platform admin naming a
     // user that lives elsewhere gets NotFound rather than a cross-tenant write.
     await expect(
       service.update(
         USER_ID,
         { firstName: 'X' } as UpdateUserDto,
-        AGENCY_A,
-        false,
+        { agencyId: AGENCY_A },
       ),
     ).resolves.toBeDefined();
 

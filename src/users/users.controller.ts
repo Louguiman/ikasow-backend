@@ -122,7 +122,9 @@ export class UsersController {
     description: 'Unauthorized - JWT token missing or invalid',
   })
   getProfile(@Request() req: any) {
-    return this.usersService.findOne(req.user.sub);
+    // `isSelf`: the id is `req.user.sub` from the verified token, not a
+    // caller-supplied path parameter, so it already identifies the row.
+    return this.usersService.findOne(req.user.sub, { isSelf: true });
   }
 
   @Patch('profile')
@@ -140,7 +142,9 @@ export class UsersController {
     description: 'Unauthorized - JWT token missing or invalid',
   })
   updateProfile(@Request() req: any, @Body() updateProfileDto: UpdateProfileDto) {
-    return this.usersService.update(req.user.sub, updateProfileDto);
+    return this.usersService.update(req.user.sub, updateProfileDto, {
+      isSelf: true,
+    });
   }
 
   @Get(':id')
@@ -165,8 +169,12 @@ export class UsersController {
   findOne(
     @Param('id', ParseUUIDPipe) id: string,
     @CurrentAgencyId() agencyId: string,
+    @Request() req: any,
   ) {
-    return this.usersService.findOne(id, agencyId);
+    return this.usersService.findOne(id, {
+      agencyId,
+      isPlatformAdmin: req.user.role === UserRole.PLATFORM_ADMIN,
+    });
   }
 
   @Patch(':id')
@@ -205,12 +213,10 @@ export class UsersController {
       );
     }
 
-    return this.usersService.update(
-      id,
-      updateUserDto,
+    return this.usersService.update(id, updateUserDto, {
       agencyId,
-      req.user.role === UserRole.PLATFORM_ADMIN,
-    );
+      isPlatformAdmin: req.user.role === UserRole.PLATFORM_ADMIN,
+    });
   }
 
   @Delete(':id')
@@ -235,8 +241,12 @@ export class UsersController {
   remove(
     @Param('id', ParseUUIDPipe) id: string,
     @CurrentAgencyId() agencyId: string,
+    @Request() req: any,
   ) {
-    return this.usersService.remove(id, agencyId);
+    return this.usersService.remove(id, {
+      agencyId,
+      isPlatformAdmin: req.user.role === UserRole.PLATFORM_ADMIN,
+    });
   }
 }
 

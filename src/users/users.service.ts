@@ -1,5 +1,6 @@
 import {
   Injectable,
+  InternalServerErrorException,
   NotFoundException,
   ConflictException,
   ForbiddenException,
@@ -13,6 +14,35 @@ import { FilterUserDto } from './dto/filter-user.dto';
 import { ErrorHandler } from '../common/utils/error-handler';
 import { AuthUtils } from '../common/utils/auth-utils';
 import { PaginatedResponse } from '../common/dto/paginated-response.dto';
+
+/**
+ * How a user lookup is scoped.
+ *
+ * `agencyId` is the caller's agency from `@CurrentAgencyId()`. It can be
+ * absent for exactly two reasons, and both have to be stated explicitly —
+ * inferring "unscoped" from an undefined string is what made these three
+ * methods fail open.
+ */
+export interface UserScope {
+  /** The caller's agency. Absent for a platform admin, who has none. */
+  agencyId?: string;
+
+  /**
+   * The caller is a platform admin. `AgencyScopeGuard` returns early for them
+   * and audits the access, so no agency is set and an unscoped lookup is theirs
+   * by design. Keyed on the role, never on the absence of an agency.
+   */
+  isPlatformAdmin?: boolean;
+
+  /**
+   * The `id` is the caller's own subject id from a self-route
+   * (`req.user.sub`), not a caller-supplied path parameter — so it already
+   * identifies the row and an agency predicate would add nothing. It is also
+   * the only way a platform admin can read their own row, since theirs has
+   * `agency_id` NULL and would 404 under an agency predicate.
+   */
+  isSelf?: boolean;
+}
 
 @Injectable()
 export class UsersService {
@@ -131,16 +161,41 @@ export class UsersService {
     }
   }
 
-  async findOne(
+  /**
+   * Builds the lookup criteria, or refuses to.
+   *
+   * This used to be `if (agencyId) where.agencyId = agencyId`, so a missing
+   * scope silently widened the query to *every* agency's users — the same
+   * fail-open shape `BaseService` was hardened against. It is not reachable
+   * through the guard today (`AgencyScopeGuard` 403s a non-platform caller with
+   * no agency, and a platform admin legitimately has none), which is exactly
+   * what makes it worth closing: a 500 for a wiring bug beats reading another
+   * tenant's user list.
+   */
+  private buildUserWhere(
     id: string,
-    agencyId?: string,
-  ): Promise<Omit<User, 'password'>> {
-    const where: any = { id };
-    if (agencyId) {
-      where.agencyId = agencyId;
+    scope: UserScope,
+  ): { id: string; agencyId?: string } {
+    const where: { id: string; agencyId?: string } = { id };
+
+    if (scope.agencyId) {
+      where.agencyId = scope.agencyId;
+      return where;
     }
 
-    const user = await this.userRepository.findOne({ where });
+    if (!scope.isPlatformAdmin && !scope.isSelf) {
+      throw new InternalServerErrorException(
+        'UsersService: refusing an unscoped user lookup — no agency was supplied',
+      );
+    }
+
+    return where;
+  }
+
+  async findOne(id: string, scope: UserScope): Promise<Omit<User, 'password'>> {
+    const user = await this.userRepository.findOne({
+      where: this.buildUserWhere(id, scope),
+    });
 
     if (!user) {
       throw new NotFoundException(`User with ID ${id} not found`);
@@ -153,16 +208,12 @@ export class UsersService {
   async update(
     id: string,
     updateUserDto: UpdateUserDto,
-    agencyId?: string,
-    isPlatformAdmin: boolean = false,
+    scope: UserScope,
   ): Promise<Omit<User, 'password'>> {
     try {
-      const where: any = { id };
-      if (agencyId) {
-        where.agencyId = agencyId;
-      }
-
-      const user = await this.userRepository.findOne({ where });
+      const user = await this.userRepository.findOne({
+        where: this.buildUserWhere(id, scope),
+      });
 
       if (!user) {
         throw new NotFoundException(`User with ID ${id} not found`);
@@ -172,7 +223,7 @@ export class UsersService {
       // agencies hands a stranger that tenant's login. The role hierarchy
       // guards `role` (see UsersController.update); `agencyId` needs its own
       // rule because hierarchy says nothing about tenancy.
-      this.assertAgencyMoveAllowed(updateUserDto, agencyId, isPlatformAdmin);
+      this.assertAgencyMoveAllowed(updateUserDto, scope);
 
       // Check if email is being updated and if it's already taken
       if (updateUserDto.email && updateUserDto.email !== user.email) {
@@ -218,18 +269,17 @@ export class UsersService {
    */
   private assertAgencyMoveAllowed(
     updateUserDto: UpdateUserDto,
-    agencyId?: string,
-    isPlatformAdmin: boolean = false,
+    scope: UserScope,
   ): void {
     // `UpdateUserDto` is `PartialType(CreateUserDto)`, whose mapped type drops
     // the property types, so read through `CreateUserDto` to get a real one.
     const requested = (updateUserDto as Partial<CreateUserDto>).agencyId;
 
-    if (isPlatformAdmin || !requested) {
+    if (scope.isPlatformAdmin || !requested) {
       return;
     }
 
-    if (requested !== agencyId) {
+    if (requested !== scope.agencyId) {
       throw new ForbiddenException(
         'Only a platform admin can move a user to another agency',
       );
@@ -240,13 +290,10 @@ export class UsersService {
     delete updateUserDto.agencyId;
   }
 
-  async remove(id: string, agencyId?: string): Promise<void> {
-    const where: any = { id };
-    if (agencyId) {
-      where.agencyId = agencyId;
-    }
-
-    const user = await this.userRepository.findOne({ where });
+  async remove(id: string, scope: UserScope): Promise<void> {
+    const user = await this.userRepository.findOne({
+      where: this.buildUserWhere(id, scope),
+    });
 
     if (!user) {
       throw new NotFoundException(`User with ID ${id} not found`);
